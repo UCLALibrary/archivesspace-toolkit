@@ -33,7 +33,7 @@ services:
       - MYSQL_USER=as
       - MYSQL_PASSWORD=as123
     healthcheck:
-      test: ["CMD-SHELL", "mysql -u$$MYSQL_USER -p$$MYSQL_PASSWORD -e 'SHOW databases;'"]
+      test: ["CMD-SHELL", "mysql -u$$MYSQL_USER -p$$MYSQL_PASSWORD -e 'SHOW DATABASES;'"]
       interval: 20s
       timeout: 10s
       retries: 3
