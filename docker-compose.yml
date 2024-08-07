@@ -6,6 +6,8 @@ services:
 
   archivesspace:
     container_name: as_aspace
+    # locally built image is used so we can support multiple architectures
+    # see README.md for more information
     image: archivesspace-local
     ports:
       - "8080:8080"
