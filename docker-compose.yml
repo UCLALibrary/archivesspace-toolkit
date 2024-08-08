@@ -10,11 +10,11 @@ services:
     # see README.md for more information
     image: archivesspace-local
     ports:
-      - "8080:8080"
-      - "8081:8081"
-      - "8082:8082"
-      - "8089:8089"
-      - "8090:8090"
+      - "8080:8080" # staff ui
+      - "8081:8081" # public ui
+      - "8082:8082" # oai-pmh
+      - "8089:8089" # backend (API)
+      - "8090:8090" # solr admin, allegedly - no response
     depends_on:
       db:
         condition: service_healthy
