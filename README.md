@@ -45,6 +45,16 @@ docker compose exec db mysql -D archivesspace -u as -pas123 -e 'select count(*) 
   * Remove the database storage: `docker volume rm archivesspace-toolkit_db`
   * Start the system as usual
 
+### Resetting Admin Password
+
+After a database refresh from production, the initial local `admin/admin` account/password will no longer work.
+
+To set the admin password to be the same as the production password for your own user, run this after changing `YOUR_ASPACE_USERNAME` to the appropriate value:
+```
+docker compose exec db mysql -D archivesspace -u as -pas123 \
+-e 'update auth_db as t1, (select * from auth_db where username = "YOUR_ASPACE_USERNAME") as t2 set t1.pwhash = t2.pwhash where t1.username = "admin";'
+```
+
 ## Rebuilding Solr Index
 
 TBD - all I know for now is this is a long-running process (14 hours so far....)
