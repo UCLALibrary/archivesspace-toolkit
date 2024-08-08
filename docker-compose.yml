@@ -1,0 +1,53 @@
+services:
+  python:
+    container_name: as_python
+    build: 
+      context: ./python
+
+  archivesspace:
+    container_name: as_aspace
+    # locally built image is used so we can support multiple architectures
+    # see README.md for more information
+    image: archivesspace-local
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+      - "8082:8082"
+      - "8089:8089"
+      - "8090:8090"
+    depends_on:
+      db:
+        condition: service_healthy
+      solr:
+        condition: service_started
+    env_file:
+      - .docker-compose_archivesspace.env
+  
+  db:
+    container_name: as_db
+    image: mysql:8.0
+    command: --character-set-server=UTF8MB4 --innodb_buffer_pool_size=2G --innodb_buffer_pool_instances=2 --log_bin_trust_function_creators=1
+    ports:
+      - "3306:3306"
+    env_file:
+      - .docker-compose_db.env
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -u$$MYSQL_USER -p$$MYSQL_PASSWORD -e 'SHOW DATABASES;'"]
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db:/var/lib/mysql
+
+  solr:
+    container_name: as_solr
+    build:
+      context: ./solr
+    command: solr-create -p 8983 -c archivesspace -d archivesspace
+    ports:
+      - "8983:8983"
+    volumes:
+      - solr:/var/solr
+
+volumes:
+  db:
+  solr:
