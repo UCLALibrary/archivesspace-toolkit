@@ -48,3 +48,18 @@ docker compose exec db mysql -D archivesspace -u as -pas123 -e 'select count(*) 
 ## Rebuilding Solr Index
 
 TBD - all I know for now is this is a long-running process (14 hours so far....)
+
+## Using APIs
+
+All API access is handled by the main application service, `archivesspace`, on port 8089.  This can be reached from the python container.
+`curl` example, for now:
+```
+# Open bash session on python container
+docker compose run python bash
+
+# Authenticate
+curl -s -F password="admin" "http://archivesspace:8089/users/admin/login"
+
+# Use the session key for all other API requests
+curl -H "X-ArchivesSpace-Session: your_session_key" "http://archivesspace:8089/repositories"
+```
