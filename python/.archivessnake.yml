@@ -2,4 +2,4 @@ baseurl: http://archivesspace:8089
 username: admin
 password: admin
 logging_config:
-default_config: DEBUG_TO_FILE
+  default_config: DEBUG_TO_FILE

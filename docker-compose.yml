@@ -3,6 +3,8 @@ services:
     container_name: as_python
     build: 
       context: ./python
+    volumes:
+      - ./python:/home/aspace/app
 
   archivesspace:
     container_name: as_aspace
