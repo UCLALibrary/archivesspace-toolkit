@@ -13,14 +13,14 @@ def get_unlinked_top_containers():
     ).json()
     total_top_containers = len(all_top_containers)
     logger.info(f"Total top containers: {total_top_containers}")
-    pages = (total_top_containers // 10) + 1
+    pages = (total_top_containers // 1000) + 1
     logger.info(f"Total pages: {pages}")
 
     output_list = []
     for i in range(1, pages + 1):
         logger.info(f"Page: {i}")
         top_containers = client.get(
-            "repositories/2/top_containers", params={"page": i}
+            "repositories/2/top_containers", params={"page": i, "page_size": 1000}
         ).json()
         for top_container in top_containers["results"]:
             # unlinked top containers have an empty collection field
