@@ -30,7 +30,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--page_size",
-        help="Number of records to retrieve per page (max 250)",
+        help="Number of records to retrieve per page",
         default=250,
         type=int,
     )
