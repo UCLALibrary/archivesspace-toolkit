@@ -29,8 +29,11 @@ def get_unlinked_top_containers(page_size: int = 250):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--page_size", help="Number of records to retrieve per page", default=250
+        "--page_size",
+        help="Number of records to retrieve per page (max 250)",
+        default=250,
+        type=int,
     )
     args = parser.parse_args()
 
-    get_unlinked_top_containers(int(args.page_size))
+    get_unlinked_top_containers(args.page_size)
