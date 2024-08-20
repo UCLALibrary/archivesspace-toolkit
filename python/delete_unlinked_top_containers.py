@@ -39,7 +39,12 @@ def delete_unlinked_top_containers(container_list_file: str):
         if container_is_unlinked(container):
             logger.info(f"Deleting unlinked top container: {container}")
             delete_response = client.delete(container)
-            if delete_response.status_code == 403:
+            status_code = delete_response.status_code
+            if status_code == 200:
+                # All OK
+                deleted_count += 1
+            elif status_code == 403:
+                # Forbidden
                 logger.error(
                     f"Permission denied deleting top container {container}:"
                     f"{delete_response.json()}"
@@ -47,7 +52,12 @@ def delete_unlinked_top_containers(container_list_file: str):
                 raise PermissionError(
                     f"Permission denied deleting top container {container}"
                 )
-            deleted_count += 1
+            else:
+                # Unknown error
+                logger.error(
+                    f"Unknown error {status_code} deleting top container {container}:"
+                    f"{delete_response.json()}"
+                )
         else:
             logger.info(
                 f"Top container {container} is linked to a collection. Skipping deletion."
