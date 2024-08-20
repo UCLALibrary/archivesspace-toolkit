@@ -10,19 +10,17 @@ client = ASnakeClient()
 
 def container_is_unlinked(top_container_uri: str) -> bool:
     top_container = client.get(top_container_uri).json()
-    if len(top_container["collection"]) == 0:
-        return True
-    return False
+    return len(top_container["collection"]) == 0
 
 
-def container_exists(top_container_uri: str) -> bool:
+def container_has_errors(top_container_uri: str) -> bool:
     top_container = client.get(top_container_uri).json()
     if "error" in top_container.keys():
         logger.error(
             f"Error retrieving top container {top_container_uri}: {top_container['error']}"
         )
-        return False
-    return True
+        return True
+    return False
 
 
 def delete_unlinked_top_containers(container_list_file: str):
@@ -34,13 +32,21 @@ def delete_unlinked_top_containers(container_list_file: str):
     deleted_count = 0
     skipped_uri_list = []
     for container in container_list:
-        if not container_exists(container):
-            # error message already logged in container_exists()
+        if container_has_errors(container):
+            # error message already logged in container_has_errors()
             skipped_uri_list.append(container)
             continue
         if container_is_unlinked(container):
             logger.info(f"Deleting unlinked top container: {container}")
-            client.delete(container)
+            delete_response = client.delete(container)
+            if delete_response.status_code == 403:
+                logger.error(
+                    f"Permission denied deleting top container {container}:"
+                    f"{delete_response.json()}"
+                )
+                raise PermissionError(
+                    f"Permission denied deleting top container {container}"
+                )
             deleted_count += 1
         else:
             logger.info(
