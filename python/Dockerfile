@@ -18,8 +18,9 @@ USER aspace
 # Copy the rest of the application code to the working directory with aspace as the owner
 COPY --chown=aspace:aspace . .
 
-# Move the .archivessnake.yml file to the home directory
-RUN mv .archivessnake.yml /home/aspace
+# Create a link to the archivessnake config file in the home directory,
+# allowing live editing via the python/app copy, which is mounted in docker-compose.yml.
+RUN (cd .. && ln -s app/.archivessnake.yml)
 
 # Install the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
