@@ -58,16 +58,16 @@ if __name__ == "__main__":
     parser.add_argument("--asnake_config", help="Path to ArchivesSnake config file")
     args = parser.parse_args()
 
-    if args.environment == "sandbox":
+    if args.alma_environment == "sandbox":
         alma_api_key = API_KEYS["SANDBOX"]
-    elif args.environment == "production":
+    elif args.alma_environment == "production":
         alma_api_key = API_KEYS["DIIT_SCRIPTS"]
 
     # load profile module
     profile_module = import_module(args.profile)
     match_containers = getattr(profile_module, "match_containers")
 
-    logger.info(f"Using Alma API key for {args.environment} environment")
+    logger.info(f"Using Alma API key for {args.alma_environment} environment")
     alma_client = AlmaAPIClient(alma_api_key)
     alma_items = get_alma_items(alma_client, args.bib_id, args.holdings_id)
     logger.info(f"Found {len(alma_items)} items in Alma")
@@ -76,6 +76,20 @@ if __name__ == "__main__":
     aspace_client = ASnakeClient(config_file=args.asnake_config)
     aspace_containers = get_aspace_containers(aspace_client, args.resource_id)
     logger.info(f"Found {len(aspace_containers)} top containers in ASpace")
+
+    # find top containers with existing barcodes
+    # write them to a file and remove them from the list of ASpace containers
+    top_containers_with_barcodes = [tc for tc in aspace_containers if tc.get("barcode")]
+    if top_containers_with_barcodes:
+        logger.info(
+            f"Found {len(top_containers_with_barcodes)} top containers with existing barcodes"
+        )
+        with open("top_containers_with_existing_barcodes.json", "w") as f:
+            json.dump(top_containers_with_barcodes, f, indent=2)
+        # remove top containers with barcodes from the list
+        aspace_containers = [
+            tc for tc in aspace_containers if tc not in top_containers_with_barcodes
+        ]
 
     matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
         match_containers(alma_items, aspace_containers, logger)

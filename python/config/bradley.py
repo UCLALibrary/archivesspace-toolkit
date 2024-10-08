@@ -7,6 +7,9 @@ def match_containers(alma_items: list, aspace_containers: list, logger) -> tuple
         description = item.get("item_data").get("description")
         alma_container_type = description.split(".")[0]
         alma_indicator = description.split(".")[1]
+        # if indicator starts with 0, remove it
+        while alma_indicator[0] == "0":
+            alma_indicator = alma_indicator[1:]
         # match with ASpace top container based on container type and indicator
         for tc in aspace_containers:
             tc_type = tc.get("type")
@@ -15,7 +18,6 @@ def match_containers(alma_items: list, aspace_containers: list, logger) -> tuple
             if tc_type == alma_container_type and tc_indicator == alma_indicator:
                 if logger:
                     logger.info(f"Matched item {item_id} with top container {tc_uri}")
-                print(f"Matched item {item_id} with top container {tc_uri}")
                 # add barcode to top container
                 tc["barcode"] = barcode
                 matched_aspace_containers.append(tc)
