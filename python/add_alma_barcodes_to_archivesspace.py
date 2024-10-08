@@ -9,7 +9,7 @@ import asnake.logging as logging
 
 logging.setup_logging(filename="archivessnake.log", level="INFO")
 # set label for custom logger - all output will be in archivessnake.log
-logger = logging.get_logger("delete_unlinked_top_containers")
+logger = logging.get_logger("add_barcodes_to_archivesspace")
 
 
 def get_aspace_containers(aspace_client: ASnakeClient, resource_id: int) -> list[str]:
