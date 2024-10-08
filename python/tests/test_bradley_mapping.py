@@ -50,3 +50,37 @@ class TestBradleyMapping(unittest.TestCase):
         self.assertEqual(len(matched_aspace_containers), 0)
         self.assertEqual(len(unmatched_alma_items), 1)
         self.assertEqual(len(unmatched_aspace_containers), 1)
+
+    def test_match_containers_leading_zeroes(self):
+        # third item in each set should match, even though alma indicator has leading zeroes
+        alma_items = [alma_data[2]]
+        aspace_containers = [aspace_data[2]]
+        logger = None
+        matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
+            match_containers(alma_items, aspace_containers, logger)
+        )
+        self.assertEqual(len(matched_aspace_containers), 1)
+        self.assertEqual(len(unmatched_alma_items), 0)
+        self.assertEqual(len(unmatched_aspace_containers), 0)
+        # test that the barcode was added to the matched top container
+        self.assertEqual(
+            matched_aspace_containers[0]["barcode"],
+            alma_items[0]["item_data"]["barcode"],
+        )
+
+    def test_match_containers_restricted(self):
+        # fourth item in each set should match, even though alma indicator has " RESTRICTED" at the end
+        alma_items = [alma_data[3]]
+        aspace_containers = [aspace_data[3]]
+        logger = None
+        matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
+            match_containers(alma_items, aspace_containers, logger)
+        )
+        self.assertEqual(len(matched_aspace_containers), 1)
+        self.assertEqual(len(unmatched_alma_items), 0)
+        self.assertEqual(len(unmatched_aspace_containers), 0)
+        # test that the barcode was added to the matched top container
+        self.assertEqual(
+            matched_aspace_containers[0]["barcode"],
+            alma_items[0]["item_data"]["barcode"],
+        )

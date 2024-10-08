@@ -10,6 +10,9 @@ def match_containers(alma_items: list, aspace_containers: list, logger) -> tuple
         # if indicator starts with 0, remove it
         while alma_indicator[0] == "0":
             alma_indicator = alma_indicator[1:]
+        # if indicator ends with " RESTRICTED", remove it
+        if alma_indicator.endswith(" RESTRICTED"):
+            alma_indicator = alma_indicator[:-11]
         # match with ASpace top container based on container type and indicator
         for tc in aspace_containers:
             tc_type = tc.get("type")
