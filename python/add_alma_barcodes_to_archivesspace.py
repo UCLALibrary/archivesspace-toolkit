@@ -47,7 +47,9 @@ if __name__ == "__main__":
     # add args for env, holding_id, ASpace resource_id
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--environment", help="Alma environment (sandbox or production)"
+        "--alma_environment",
+        help="Alma environment (sandbox or production)",
+        choices=["sandbox", "production"],
     )
     parser.add_argument("--bib_id", help="Alma bib MMS ID")
     parser.add_argument("--holdings_id", help="Alma holdings MMS ID")
@@ -79,11 +81,14 @@ if __name__ == "__main__":
         match_containers(alma_items, aspace_containers, logger)
     )
 
+    # update ASpace top containers with barcodes
     for tc in matched_aspace_containers:
         aspace_client.post(tc["uri"], json=tc)
         logger.info(f"Added barcode to top container {tc['uri']}")
 
     logger.info(f"Updated barcodes for {len(matched_aspace_containers)} top containers")
+
+    # if there are unmatched items or containers, write them to JSON files
     if unmatched_alma_items:
         logger.info(f"Found {len(unmatched_alma_items)} unmatched Alma items.")
         with open("unmatched_alma_items.json", "w") as f:
