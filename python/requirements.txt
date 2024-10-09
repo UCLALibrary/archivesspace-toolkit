@@ -1,1 +1,3 @@
 archivessnake ~= 0.10.1
+# alma_api_client must be installed from the GitHub repository
+git+https://github.com/UCLALibrary/alma-api-client

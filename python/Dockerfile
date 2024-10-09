@@ -1,7 +1,10 @@
-FROM python:3.11-slim-bullseye
+FROM python:3.12-slim-bookworm
 
 # Set correct timezone
 RUN ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
+
+# install git, required to install the alma_api_client package from github
+RUN apt-get update && apt-get install -y git
 
 # Create generic user and group
 RUN useradd -c "generic app user" -d /home/aspace -s /bin/bash -m aspace

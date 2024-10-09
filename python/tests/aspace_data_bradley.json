@@ -1,0 +1,110 @@
+[
+  {
+    "active_restrictions": [],
+    "collection": [
+      {
+        "display_string": "Mayor Tom Bradley Administrative papers",
+        "identifier": "LSC--0293",
+        "ref": "/repositories/2/resources/3828"
+      }
+    ],
+    "container_locations": [],
+    "create_time": "2021-03-10T00:37:35Z",
+    "created_by": "courd",
+    "display_string": "Box 123",
+    "indicator": "123",
+    "is_linked_to_published_record": "True",
+    "jsonmodel_type": "top_container",
+    "last_modified_by": "courd",
+    "lock_version": 12,
+    "long_display_string": "Box 123, LSC--0293, Mayor Tom Bradley Administrative papers",
+    "repository": { "ref": "/repositories/2" },
+    "restricted": "False",
+    "series": [],
+    "system_mtime": "2024-03-05T23:30:59Z",
+    "type": "box",
+    "uri": "/repositories/2/top_containers/140700",
+    "user_mtime": "2021-03-10T00:37:35Z"
+  },
+  {
+    "active_restrictions": [],
+    "collection": [
+      {
+        "display_string": "Mayor Tom Bradley Administrative papers",
+        "identifier": "LSC--0293",
+        "ref": "/repositories/2/resources/3828"
+      }
+    ],
+    "container_locations": [],
+    "create_time": "2021-03-10T00:37:35Z",
+    "created_by": "courd",
+    "display_string": "Box 789",
+    "indicator": "789",
+    "is_linked_to_published_record": "True",
+    "jsonmodel_type": "top_container",
+    "last_modified_by": "courd",
+    "lock_version": 12,
+    "long_display_string": "Box 789, LSC--0293, Mayor Tom Bradley Administrative papers",
+    "repository": { "ref": "/repositories/2" },
+    "restricted": "False",
+    "series": [],
+    "system_mtime": "2024-03-05T23:30:59Z",
+    "type": "box",
+    "uri": "/repositories/2/top_containers/140701",
+    "user_mtime": "2021-03-10T00:37:35Z"
+  },
+  {
+    "active_restrictions": [],
+    "collection": [
+      {
+        "display_string": "Mayor Tom Bradley Administrative papers",
+        "identifier": "LSC--0293",
+        "ref": "/repositories/2/resources/3828"
+      }
+    ],
+    "container_locations": [],
+    "create_time": "2021-03-10T00:37:35Z",
+    "created_by": "courd",
+    "display_string": "Box 12",
+    "indicator": "12",
+    "is_linked_to_published_record": "True",
+    "jsonmodel_type": "top_container",
+    "last_modified_by": "courd",
+    "lock_version": 12,
+    "long_display_string": "Box 789, LSC--0293, Mayor Tom Bradley Administrative papers",
+    "repository": { "ref": "/repositories/2" },
+    "restricted": "False",
+    "series": [],
+    "system_mtime": "2024-03-05T23:30:59Z",
+    "type": "box",
+    "uri": "/repositories/2/top_containers/140701",
+    "user_mtime": "2021-03-10T00:37:35Z"
+  },
+  {
+    "active_restrictions": [],
+    "collection": [
+      {
+        "display_string": "Mayor Tom Bradley Administrative papers",
+        "identifier": "LSC--0293",
+        "ref": "/repositories/2/resources/3828"
+      }
+    ],
+    "container_locations": [],
+    "create_time": "2021-03-10T00:37:35Z",
+    "created_by": "courd",
+    "display_string": "Box 111",
+    "indicator": "111",
+    "is_linked_to_published_record": "True",
+    "jsonmodel_type": "top_container",
+    "last_modified_by": "courd",
+    "lock_version": 12,
+    "long_display_string": "Box 789, LSC--0293, Mayor Tom Bradley Administrative papers",
+    "repository": { "ref": "/repositories/2" },
+    "restricted": "False",
+    "series": [],
+    "system_mtime": "2024-03-05T23:30:59Z",
+    "type": "box",
+    "uri": "/repositories/2/top_containers/140701",
+    "user_mtime": "2021-03-10T00:37:35Z"
+  }
+]
