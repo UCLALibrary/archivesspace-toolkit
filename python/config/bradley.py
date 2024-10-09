@@ -71,8 +71,7 @@ def _get_alma_match_data(alma_items: list) -> dict[tuple]:
         alma_indicator = description.split(".")[1]
 
         # if indicator starts with leading zeroes, remove them
-        while alma_indicator[0] == "0":
-            alma_indicator = alma_indicator[1:]
+        alma_indicator = alma_indicator.lstrip("0")
 
         # if indicator ends with " RESTRICTED", remove it
         if alma_indicator.endswith(" RESTRICTED"):
