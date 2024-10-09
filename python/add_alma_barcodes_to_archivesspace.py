@@ -43,10 +43,9 @@ def get_alma_items(
     return alma_items
 
 
-def write_json_to_file(data: list[dict], filename: str, log_message: str) -> None:
+def write_json_to_file(data: list[dict], filename: str) -> None:
     with open(filename, "w") as f:
         json.dump(data, f, indent=2)
-    logger.info(log_message)
 
 
 if __name__ == "__main__":
@@ -87,11 +86,14 @@ if __name__ == "__main__":
     # write them to a file and remove them from the list of ASpace containers
     top_containers_with_barcodes = [tc for tc in aspace_containers if tc.get("barcode")]
     if top_containers_with_barcodes:
-        write_json_to_file(
-            top_containers_with_barcodes,
-            "top_containers_with_existing_barcodes.json",
+        logger.info(
             f"Found {len(top_containers_with_barcodes)} top containers with existing barcodes."
-            " Container data written to top_containers_with_existing_barcodes.json.",
+        )
+        write_json_to_file(
+            top_containers_with_barcodes, "top_containers_with_existing_barcodes.json"
+        )
+        logger.info(
+            "Wrote containers with existing barcodes to top_containers_with_existing_barcodes.json"
         )
         # remove top containers with barcodes from the list
         aspace_containers = [
@@ -111,17 +113,17 @@ if __name__ == "__main__":
 
     # if there are unmatched items or containers, write them to JSON files
     if unmatched_alma_items:
-        write_json_to_file(
-            unmatched_alma_items,
-            "unmatched_alma_items.json",
-            f"Found {len(unmatched_alma_items)} unmatched Alma items."
-            " Unmatched Alma items written to unmatched_alma_items.json",
-        )
+        logger.info(f"Found {len(unmatched_alma_items)} unmatched Alma items.")
+        write_json_to_file(unmatched_alma_items, "unmatched_alma_items.json")
+        logger.info("Unmatched Alma items written to unmatched_alma_items.json")
 
     if unmatched_aspace_containers:
-        write_json_to_file(
-            unmatched_aspace_containers,
-            "unmatched_aspace_containers.json",
+        logger.info(
             f"Found {len(unmatched_aspace_containers)} unmatched ASpace top containers."
-            " Unmatched ASpace top containers written to unmatched_aspace_containers.json",
+        )
+        write_json_to_file(
+            unmatched_aspace_containers, "unmatched_aspace_containers.json"
+        )
+        logger.info(
+            "Unmatched ASpace top containers written to unmatched_aspace_containers.json"
         )
