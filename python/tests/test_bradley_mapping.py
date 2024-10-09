@@ -1,19 +1,16 @@
 import unittest
-import sys
 import os
 import json
+from config.bradley import match_containers
 
+# Get the directory of the test file
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Add the config directory to the sys.path
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config"))
-)
-from bradley import match_containers
+# Construct absolute paths for the test data files
+alma_data_path = os.path.join(current_dir, "alma_data_bradley.json")
+aspace_data_path = os.path.join(current_dir, "aspace_data_bradley.json")
 
-
-alma_data_path = "alma_data_bradley.json"
-aspace_data_path = "aspace_data_bradley.json"
-
+# Load the test data files
 with open(alma_data_path, "r") as alma_data_file:
     alma_data = json.load(alma_data_file)
 
@@ -26,9 +23,8 @@ class TestBradleyMapping(unittest.TestCase):
         # first item in alma_data should match first top container in aspace_data
         alma_items = [alma_data[0]]
         aspace_containers = [aspace_data[0]]
-        logger = None
         matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
-            match_containers(alma_items, aspace_containers, logger)
+            match_containers(alma_items, aspace_containers)
         )
         self.assertEqual(len(matched_aspace_containers), 1)
         self.assertEqual(len(unmatched_alma_items), 0)
@@ -43,9 +39,8 @@ class TestBradleyMapping(unittest.TestCase):
         # second item in each set should not match
         alma_items = [alma_data[1]]
         aspace_containers = [aspace_data[1]]
-        logger = None
         matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
-            match_containers(alma_items, aspace_containers, logger)
+            match_containers(alma_items, aspace_containers)
         )
         self.assertEqual(len(matched_aspace_containers), 0)
         self.assertEqual(len(unmatched_alma_items), 1)
@@ -55,9 +50,8 @@ class TestBradleyMapping(unittest.TestCase):
         # third item in each set should match, even though alma indicator has leading zeroes
         alma_items = [alma_data[2]]
         aspace_containers = [aspace_data[2]]
-        logger = None
         matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
-            match_containers(alma_items, aspace_containers, logger)
+            match_containers(alma_items, aspace_containers)
         )
         self.assertEqual(len(matched_aspace_containers), 1)
         self.assertEqual(len(unmatched_alma_items), 0)
@@ -69,12 +63,12 @@ class TestBradleyMapping(unittest.TestCase):
         )
 
     def test_match_containers_restricted(self):
-        # fourth item in each set should match, even though alma indicator has " RESTRICTED" at the end
+        # fourth item in each set should match,
+        # even though alma indicator has " RESTRICTED" at the end
         alma_items = [alma_data[3]]
         aspace_containers = [aspace_data[3]]
-        logger = None
         matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
-            match_containers(alma_items, aspace_containers, logger)
+            match_containers(alma_items, aspace_containers)
         )
         self.assertEqual(len(matched_aspace_containers), 1)
         self.assertEqual(len(unmatched_alma_items), 0)
