@@ -73,3 +73,14 @@ curl -s -F password="admin" "http://archivesspace:8089/users/admin/login"
 # Use the session key for all other API requests
 curl -H "X-ArchivesSpace-Session: your_session_key" "http://archivesspace:8089/repositories"
 ```
+
+## Connecting to remote instances (UCLA-specific)
+
+It's possible to access data "live" in the hosted test instance, from the development environment. This requires extra
+setup, because the APIs are IP-restricted and must be accessed via HTTPS/TLS.  General notes are in our [internal documentation](https://uclalibrary.atlassian.net/wiki/x/1gOWGg).  For this specific application:
+
+1. Add `127.0.0.1       uclalsc-test.lyrasistechnology.org` to your local `/etc/hosts`
+2. Create a tunnel from local machine through our jump server. Local port is arbitrary, I've used `9000`:
+
+   `ssh -NT -L 0.0.0.0:9000:uclalsc-test.lyrasistechnology.org:443 jump`
+3. Connect from local machine, or from within Docker, using `https://uclalsc-test.lyrasistechnology.org:9000/api` and appropriate credentials.

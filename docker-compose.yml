@@ -5,6 +5,10 @@ services:
       context: ./python
     volumes:
       - ./python:/home/aspace/app
+    extra_hosts:
+      # For access to remote resources via ssh tunnel on host
+      - "host.docker.internal:host-gateway"
+      - "uclalsc-test.lyrasistechnology.org:host-gateway"
 
   archivesspace:
     container_name: as_aspace
