@@ -168,3 +168,7 @@ cython_debug/
 # Exclude local secrets
 *secret*
 *password*
+alma_api_keys.py
+
+# Exclude database dumps
+*.sql.gz
