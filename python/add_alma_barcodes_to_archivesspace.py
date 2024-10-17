@@ -14,12 +14,16 @@ logger = logging.get_logger("add_barcodes_to_archivesspace")
 
 def get_aspace_containers(aspace_client: ASnakeClient, resource_id: int) -> list[str]:
     url = f"/repositories/2/resources/{resource_id}/top_containers"
-    container_refs = []
-    for tc in aspace_client.get_paged(url):
-        container_refs.append(tc)
-    # this endpoint returns refs, so we need to get the full container JSON
+    container_refs = aspace_client.get(url).json()
+    # remove duplicate refs, if any
+    # deduplicate using a set of tuples of sorted items
+    container_refs_deduped = {tuple(sorted(tc.items())) for tc in container_refs}
+    # convert strings back to dicts, then set back to list
+    container_refs_deduped = [dict(tc) for tc in container_refs_deduped]
+
+    # the top containers endpoint returns refs, so we need to get the full container JSON
     containers = []
-    for tc in container_refs:
+    for tc in container_refs_deduped:
         tc_json = aspace_client.get(tc["ref"]).json()
         containers.append(tc_json)
     return containers
@@ -101,7 +105,7 @@ if __name__ == "__main__":
         ]
 
     matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
-        match_containers(alma_items, aspace_containers)
+        match_containers(alma_items, aspace_containers, logger)
     )
 
     # update ASpace top containers with barcodes
