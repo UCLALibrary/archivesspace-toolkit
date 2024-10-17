@@ -3,8 +3,9 @@ FROM python:3.12-slim-bookworm
 # Set correct timezone
 RUN ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
 
-# install git, required to install the alma_api_client package from github
-RUN apt-get update && apt-get install -y git
+# Install git, required to install the alma_api_client package from github.
+# Add curl as well for testing connectivity.
+RUN apt-get update && apt-get install -y git curl
 
 # Create generic user and group
 RUN useradd -c "generic app user" -d /home/aspace -s /bin/bash -m aspace
@@ -20,10 +21,6 @@ USER aspace
 
 # Copy the rest of the application code to the working directory with aspace as the owner
 COPY --chown=aspace:aspace . .
-
-# Create a link to the archivessnake config file in the home directory,
-# allowing live editing via the python/app copy, which is mounted in docker-compose.yml.
-RUN (cd .. && ln -s app/.archivessnake.yml)
 
 # Install the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
