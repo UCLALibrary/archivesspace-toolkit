@@ -84,3 +84,11 @@ setup, because the APIs are IP-restricted and must be accessed via HTTPS/TLS.  G
 
    `ssh -NT -L 0.0.0.0:9000:uclalsc-test.lyrasistechnology.org:443 jump`
 3. Connect from local machine, or from within Docker, using `https://uclalsc-test.lyrasistechnology.org:9000/api` and appropriate credentials.
+
+## API configuration files
+
+There is a default ArchivesSnake configuration file in `python/.archivessnake.yml`.  This supports access from the running `python` container to the running `archivesspace` container, using default (and non-secret) credentials.
+
+For other configurations, copy `python/.archivessnake.yml` to `python/.archivessnake_secret_DEV.yml` or `python/.archivessnake_secret_TEST.yml`, and edit the `baseurl`, `username`, and `password` fields as appropriate.  These files must be in the `python` directory to be available within the container.
+
+These are excluded from the repository, so contact a teammate if you need specific credentials.
