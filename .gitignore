@@ -164,3 +164,11 @@ cython_debug/
 # Exclude logs and other output
 *.txt
 *.csv
+
+# Exclude local secrets
+*secret*
+*password*
+alma_api_keys.py
+
+# Exclude database dumps
+*.sql.gz
