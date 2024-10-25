@@ -1,8 +1,13 @@
+from typing import Optional, Any
+
+
 def match_containers(
-    alma_items: list[dict], aspace_containers: list[dict]
+    alma_items: list[dict], aspace_containers: list[dict], logger: Optional[Any] = None
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
-    Match Alma items with ASpace top containers for the Tom Bradley collection.
+    Match Alma items with ASpace top containers. Parses Alma item descriptions into
+    container type and indicator, and compares them with ASpace top container indicators with
+    normalization (removing leading zeroes and " RESTRICTED" from Alma indicators).
 
     Args:
         alma_items: list of Alma items (JSON data as obtained from Alma API)
@@ -14,10 +19,6 @@ def match_containers(
             unmatched_alma_items (list of JSON data elements as obtained from Alma API),
             unmatched_aspace_containers (list of JSON data elements as obtained from ASpace API)
     """
-    # use logger defined as a global in main script, if available
-    # (will be None in tests)
-    logger = globals().get("logger")
-
     # get match data for Alma items and ASpace top containers
     alma_match_data = _get_alma_match_data(alma_items)
     aspace_match_data = _get_aspace_match_data(aspace_containers)
@@ -34,7 +35,7 @@ def match_containers(
 
             if logger:
                 logger.info(
-                    f"Matched item {alma_item.get('item_data').get('pid')}"
+                    f"Matched item {alma_item.get('item_data').get('pid')} "
                     f"with top container {tc.get('uri')}"
                 )
 
@@ -53,16 +54,27 @@ def match_containers(
     return matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers
 
 
-def _get_aspace_match_data(aspace_containers: list) -> dict[tuple]:
+def _get_aspace_match_data(
+    aspace_containers: list, logger: Optional[Any] = None
+) -> dict[tuple]:
     match_data = {}
     for tc in aspace_containers:
         tc_indicator = tc.get("indicator")
         tc_type = tc.get("type")
+        # double check for duplicates
+        if (tc_indicator, tc_type) in match_data:
+            if logger:
+                logger.error(
+                    f"Duplicate top container found: {tc_indicator} {tc_type} {tc.get('uri')}"
+                )
+                logger.error(
+                    f"Existing top container: {match_data[(tc_indicator, tc_type)].get('uri')}"
+                )
         match_data[(tc_indicator, tc_type)] = tc
     return match_data
 
 
-def _get_alma_match_data(alma_items: list) -> dict[tuple]:
+def _get_alma_match_data(alma_items: list, logger: Optional[Any] = None) -> dict[tuple]:
     match_data = {}
     for item in alma_items:
         description = item.get("item_data").get("description")
@@ -77,5 +89,21 @@ def _get_alma_match_data(alma_items: list) -> dict[tuple]:
         if alma_indicator.endswith(" RESTRICTED"):
             alma_indicator = alma_indicator[:-11]
 
+        # check if this will be a duplicate key
+        if (alma_indicator, alma_container_type) in match_data:
+            current_item_pid = item.get("item_data").get("pid")
+            previous_item_pid = (
+                match_data[(alma_indicator, alma_container_type)]
+                .get("item_data")
+                .get("pid")
+            )
+            if logger:
+                logger.error(
+                    f"Duplicate Alma description: {(alma_indicator, alma_container_type)}",
+                    f" for item {current_item_pid}",
+                )
+                logger.error(
+                    f"Previous item with this description: {previous_item_pid}"
+                )
         match_data[(alma_indicator, alma_container_type)] = item
     return match_data

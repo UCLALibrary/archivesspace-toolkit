@@ -1,7 +1,7 @@
 import unittest
 import os
 import json
-from config.bradley import match_containers
+from config.box_description_matching import match_containers
 
 # Get the directory of the test file
 current_dir = os.path.dirname(os.path.abspath(__file__))
