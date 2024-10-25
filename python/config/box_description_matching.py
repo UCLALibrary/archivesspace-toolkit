@@ -65,11 +65,14 @@ def _get_aspace_match_data(
         if (tc_indicator, tc_type) in match_data:
             if logger:
                 logger.error(
-                    f"Duplicate top container found: {tc_indicator} {tc_type} {tc.get('uri')}"
+                    f"Duplicate top container found: {tc_indicator} {tc_type} {tc.get('uri')}.",
+                    f" Existing top container: {match_data[(tc_indicator, tc_type)].get('uri')}.",
+                    " Skipping both top containers.",
                 )
-                logger.error(
-                    f"Existing top container: {match_data[(tc_indicator, tc_type)].get('uri')}"
-                )
+            # remove the duplicate
+            del match_data[(tc_indicator, tc_type)]
+            # skip this top container
+            continue
         match_data[(tc_indicator, tc_type)] = tc
     return match_data
 
@@ -100,10 +103,13 @@ def _get_alma_match_data(alma_items: list, logger: Optional[Any] = None) -> dict
             if logger:
                 logger.error(
                     f"Duplicate Alma description: {(alma_indicator, alma_container_type)}",
-                    f" for item {current_item_pid}",
+                    f" for item {current_item_pid}.",
+                    f" Previous item with this description: {previous_item_pid}.",
+                    " Skipping both items.",
                 )
-                logger.error(
-                    f"Previous item with this description: {previous_item_pid}"
-                )
+            # remove the duplicate
+            del match_data[(alma_indicator, alma_container_type)]
+            # skip this item
+            continue
         match_data[(alma_indicator, alma_container_type)] = item
     return match_data
