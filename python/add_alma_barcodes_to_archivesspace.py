@@ -16,15 +16,12 @@ def get_aspace_containers(aspace_client: ASnakeClient, resource_id: int) -> list
     url = f"/repositories/2/resources/{resource_id}/top_containers"
     container_refs = aspace_client.get(url).json()
     # remove duplicate refs, if any
-    # deduplicate using a set of tuples of sorted items
-    container_refs_deduped = {tuple(sorted(tc.items())) for tc in container_refs}
-    # convert strings back to dicts, then set back to list
-    container_refs_deduped = [dict(tc) for tc in container_refs_deduped]
+    container_refs_deduped = set([tc["ref"] for tc in container_refs])
 
     # the top containers endpoint returns refs, so we need to get the full container JSON
     containers = []
     for tc in container_refs_deduped:
-        tc_json = aspace_client.get(tc["ref"]).json()
+        tc_json = aspace_client.get(tc).json()
         # check that the container is linked to a published resource
         if not tc_json.get("is_linked_to_published_record"):
             logger.info(

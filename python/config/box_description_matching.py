@@ -5,9 +5,8 @@ def match_containers(
     alma_items: list[dict], aspace_containers: list[dict], logger: Optional[Any] = None
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
-    Match Alma items with ASpace top containers. Parses Alma item descriptions into
-    container type and indicator, and compares them with ASpace top container indicators with
-    normalization (removing leading zeroes and " RESTRICTED" from Alma indicators).
+    Matches Alma items with ASpace top containers and adds barcodes to the matched top containers.
+    Also returns lists of unmatched Alma items and ASpace top containers.
 
     Args:
         alma_items: list of Alma items (JSON data as obtained from Alma API)
@@ -57,6 +56,7 @@ def match_containers(
 def _get_aspace_match_data(
     aspace_containers: list, logger: Optional[Any] = None
 ) -> dict[tuple]:
+    """Parses ASpace top container indicators and types into a dictionary."""
     match_data = {}
     for tc in aspace_containers:
         tc_indicator = tc.get("indicator")
@@ -78,6 +78,8 @@ def _get_aspace_match_data(
 
 
 def _get_alma_match_data(alma_items: list, logger: Optional[Any] = None) -> dict[tuple]:
+    """Parses Alma item descriptions into container type and indicator,
+    and normalizes the indicator by removing leading zeroes and " RESTRICTED"."""
     match_data = {}
     for item in alma_items:
         description = item.get("item_data").get("description")
