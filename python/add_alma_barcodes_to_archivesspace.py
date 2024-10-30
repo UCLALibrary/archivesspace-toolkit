@@ -113,7 +113,7 @@ if __name__ == "__main__":
 
     # update ASpace top containers with barcodes
     for tc in matched_aspace_containers:
-        # aspace_client.post(tc["uri"], json=tc)
+        aspace_client.post(tc["uri"], json=tc)
         logger.info(f"Added barcode to top container {tc['uri']}")
 
     logger.info(f"Updated barcodes for {len(matched_aspace_containers)} top containers")
