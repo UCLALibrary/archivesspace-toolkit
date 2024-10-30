@@ -47,7 +47,9 @@ def get_alma_items(
             bib_id, holdings_id, {"limit": 100, "offset": offset}
         )
         offset += 100
-        alma_items.extend(current_items.get("item"))
+        # keep only item_data from each item in the list
+        for item in current_items.get("item"):
+            alma_items.append(item.get("item_data"))
     return alma_items
 
 
@@ -108,9 +110,13 @@ if __name__ == "__main__":
             tc for tc in aspace_containers if tc not in top_containers_with_barcodes
         ]
 
-    matched_aspace_containers, unmatched_alma_items, unmatched_aspace_containers = (
-        match_containers(alma_items, aspace_containers, logger)
-    )
+    (
+        matched_aspace_containers,
+        unmatched_alma_items,
+        unmatched_aspace_containers,
+        items_with_duplicate_keys,
+        tcs_with_duplicate_keys,
+    ) = match_containers(alma_items, aspace_containers, logger)
 
     # update ASpace top containers with barcodes
     for tc in matched_aspace_containers:
@@ -134,4 +140,22 @@ if __name__ == "__main__":
         )
         logger.info(
             "Unmatched ASpace top containers written to unmatched_aspace_containers.json"
+        )
+
+    if items_with_duplicate_keys:
+        logger.info(
+            f"Found {len(items_with_duplicate_keys)} Alma items with duplicate keys."
+        )
+        write_json_to_file(items_with_duplicate_keys, "items_with_duplicate_keys.json")
+        logger.info(
+            "Items with duplicate keys written to items_with_duplicate_keys.json"
+        )
+
+    if tcs_with_duplicate_keys:
+        logger.info(
+            f"Found {len(tcs_with_duplicate_keys)} ASpace top containers with duplicate keys."
+        )
+        write_json_to_file(tcs_with_duplicate_keys, "tcs_with_duplicate_keys.json")
+        logger.info(
+            "Top containers with duplicate keys written to tcs_with_duplicate_keys.json"
         )
