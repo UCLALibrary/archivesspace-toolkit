@@ -3,7 +3,7 @@ from typing import Optional, Any
 
 def match_containers(
     alma_items: list[dict], aspace_containers: list[dict], logger: Optional[Any] = None
-) -> tuple[list[dict], list[dict], list[dict], list[tuple], list[tuple]]:
+) -> tuple[list[dict], dict[dict]]:
     """
     Matches Alma items with ASpace top containers and adds barcodes to the matched top containers.
     Also returns lists of unmatched Alma items and ASpace top containers.
@@ -13,12 +13,15 @@ def match_containers(
         aspace_containers: list of ASpace top containers (JSON data as obtained from ASpace API)
 
     Returns:
-        tuple of lists containing 5 elements:
-            matched_aspace_containers (list of JSON data elements with barcodes added),
-            unmatched_alma_items (list of JSON data elements as obtained from Alma API),
-            unmatched_aspace_containers (list of JSON data elements as obtained from ASpace API)
-            items_with_duplicate_keys (list of tuples with Alma item PID, indicator, and type),
-            tcs_with_duplicate_keys (list of tuples with ASpace container URI, indicator, and type)
+        tuple of lists containing two elements:
+            matched_aspace_containers - list of JSON data elements with barcodes added,
+            unhandled_data - dict containing:
+                unmatched_alma_items - list of unmatched items (JSON from Alma API),
+                unmatched_aspace_containers - list of unmatched containers (JSON from ASpace API),
+                items_with_duplicate_keys - list of Alma items with duplicate keys
+                    (tuple of PID, indicator, type),
+                tcs_with_duplicate_keys - list of JSON data elements with duplicate keys
+                    (tuple of URI, indicator, type)
     """
     # get match data for Alma items and ASpace top containers
     alma_match_data, items_with_duplicate_keys = _get_alma_match_data(
@@ -56,13 +59,15 @@ def match_containers(
         aspace_match_data[key] for key in unmatched_aspace_keys
     ]
 
-    return (
-        matched_aspace_containers,
-        unmatched_alma_items,
-        unmatched_aspace_containers,
-        items_with_duplicate_keys,
-        tcs_with_duplicate_keys,
-    )
+    # assemble unhandled data dict
+    unhandled_data = {
+        "unmatched_alma_items": unmatched_alma_items,
+        "unmatched_aspace_containers": unmatched_aspace_containers,
+        "items_with_duplicate_keys": items_with_duplicate_keys,
+        "tcs_with_duplicate_keys": tcs_with_duplicate_keys,
+    }
+
+    return matched_aspace_containers, unhandled_data
 
 
 def _get_aspace_match_data(
@@ -138,4 +143,5 @@ def _get_alma_match_data(
             # skip this item
             continue
         match_data[(alma_indicator, alma_container_type)] = item
+
     return match_data, items_with_duplicate_keys
