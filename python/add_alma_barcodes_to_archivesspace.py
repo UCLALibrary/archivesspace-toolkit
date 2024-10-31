@@ -158,7 +158,6 @@ if __name__ == "__main__":
     aspace_containers = get_aspace_containers(container_refs)
     logger.info(f"Found {len(aspace_containers)} top containers in ASpace")
 
-    x = 1 / 0
     logger.info(f"Using Alma API key for {args.alma_environment} environment")
     alma_client = AlmaAPIClient(alma_api_key)
     alma_items = get_alma_items(alma_client, args.bib_id, args.holdings_id)
