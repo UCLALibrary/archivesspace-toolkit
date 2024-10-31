@@ -8,9 +8,9 @@ from asnake.client import ASnakeClient
 import asnake.logging as logging
 
 
-logging_filename_base = "add_alma_barcodes_to_archivesspace"
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-logging_filename = f"{logging_filename_base}_{timestamp}.log"
+logging_filename_base = f"add_alma_barcodes_to_archivesspace_{timestamp}"
+logging_filename = f"{logging_filename_base}.log"
 logging.setup_logging(filename=logging_filename, level="INFO")
 # set label for custom logger - all output will be in archivessnake.log
 logger = logging.get_logger("add_barcodes_to_archivesspace")
@@ -145,9 +145,7 @@ if __name__ == "__main__":
 
     # if there is any unhandled data, write it to a file
     if unhandled_data:
-        unhandled_data_filename = (
-            f"add_alma_barcodes_to_archivesspace_unhandled_{timestamp}.json"
-        )
+        unhandled_data_filename = f"unhandled_{logging_filename_base}.json"
         write_json_to_file(unhandled_data, unhandled_data_filename)
         logger.info(
             f"Unhandled data (items and top containers remaining unmatched or with duplicate keys)"

@@ -13,7 +13,7 @@ def match_containers(
         aspace_containers: list of ASpace top containers (JSON data as obtained from ASpace API)
 
     Returns:
-        tuple of lists containing two elements:
+        tuple containing two elements:
             matched_aspace_containers - list of JSON data elements with barcodes added,
             unhandled_data - dict containing:
                 unmatched_alma_items - list of unmatched items (JSON from Alma API),
