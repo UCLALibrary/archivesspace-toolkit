@@ -5,6 +5,8 @@ from importlib import import_module
 from alma_api_keys import API_KEYS
 from alma_api_client import AlmaAPIClient
 from asnake.client import ASnakeClient
+from MySQLdb import connect, Connection
+from MySQLdb.cursors import DictCursor
 import asnake.logging as logging
 
 
@@ -16,15 +18,59 @@ logging.setup_logging(filename=logging_filename, level="INFO")
 logger = logging.get_logger("add_barcodes_to_archivesspace")
 
 
-def get_aspace_containers(aspace_client: ASnakeClient, resource_id: int) -> list[str]:
+def _get_container_refs_from_api(
+    aspace_client: ASnakeClient, resource_id: int
+) -> set[str]:
+    """
+    Returns a de-duped set of _ref_ top container URIs for the given resource_id,
+    obtained via API call.
+    This API call can fail via timeout in hosted environments, when
+    more than a few thousand containers are associated with the resource.
+    """
     url = f"/repositories/2/resources/{resource_id}/top_containers"
     container_refs = aspace_client.get(url).json()
-    # remove duplicate refs, if any
-    container_refs_deduped = set([tc["ref"] for tc in container_refs])
+    # Extract the ref URIs and de-dup.
+    return set(tc["ref"] for tc in container_refs)
 
+
+def _get_container_refs_from_db(mysql_client: Connection, resource_id: int) -> set[str]:
+    """
+    Returns a de-duped set of _ref_ top container URIs for the given resource_id,
+    obtained via database query.
+    This is intended as an alternative for resources with more than a few thousand
+    containers, as the API call may time out.
+    """
+    query = """
+        select distinct
+            concat('/repositories/', r.repo_id, '/top_containers/', tc.id) as container_uri
+        from resource r
+        inner join archival_object ao on r.id = ao.root_record_id
+        inner join instance i on ao.id = i.archival_object_id
+        inner join sub_container sc on i.id = sc.instance_id
+        inner join top_container_link_rlshp tclr on sc.id = tclr.sub_container_id
+        inner join top_container tc on tclr.top_container_id = tc.id
+        where r.id = %s
+        and ao.publish = 1 -- true
+        and ao.suppressed = 0 -- false
+        order by container_uri
+    """
+    # Paramterized query requires tuple of values
+    cursor = mysql_client.cursor(DictCursor)
+    cursor.execute(query, (resource_id,))
+    container_refs = set(row["container_uri"] for row in cursor.fetchall())
+    cursor.close()
+    return container_refs
+
+
+def get_aspace_containers(container_refs: set[str]) -> list[str]:
+    """
+    Given a set of top container ref URIs, obtain the full container data as JSON
+    for each one that linked to a published resource.
+    Returns a list of qualifying container data.
+    """
     # the top containers endpoint returns refs, so we need to get the full container JSON
     containers = []
-    for tc in container_refs_deduped:
+    for tc in container_refs:
         tc_json = aspace_client.get(tc).json()
         # check that the container is linked to a published resource
         if not tc_json.get("is_linked_to_published_record"):
@@ -75,6 +121,11 @@ if __name__ == "__main__":
     parser.add_argument("--resource_id", help="ArchivesSpace resource ID")
     parser.add_argument("--profile", help="Path to profile module")
     parser.add_argument("--asnake_config", help="Path to ArchivesSnake config file")
+    parser.add_argument(
+        "--use_db",
+        help="Get containers from database instead of API",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     if args.alma_environment == "sandbox":
@@ -86,15 +137,32 @@ if __name__ == "__main__":
     profile_module = import_module(args.profile)
     match_containers = getattr(profile_module, "match_containers")
 
+    logger.info(f"Getting ASpace top containers for resource {args.resource_id}")
+    aspace_client = ASnakeClient(config_file=args.asnake_config)
+    if args.use_db:
+        # Initialize database connection, if used;
+        # db connection info comes from asnake config file.
+        # This is a dictionary of values.
+        db_settings = aspace_client.config.get("database")
+        mysql_client = connect(
+            host=db_settings.get("host"),
+            database=db_settings.get("database"),
+            user=db_settings.get("user"),
+            password=db_settings.get("password"),
+        )
+        container_refs = _get_container_refs_from_db(mysql_client, args.resource_id)
+        mysql_client.close()
+    else:
+        container_refs = _get_container_refs_from_api(aspace_client, args.resource_id)
+
+    aspace_containers = get_aspace_containers(container_refs)
+    logger.info(f"Found {len(aspace_containers)} top containers in ASpace")
+
+    x = 1 / 0
     logger.info(f"Using Alma API key for {args.alma_environment} environment")
     alma_client = AlmaAPIClient(alma_api_key)
     alma_items = get_alma_items(alma_client, args.bib_id, args.holdings_id)
     logger.info(f"Found {len(alma_items)} items in Alma")
-
-    logger.info(f"Getting ASpace top containers for resource {args.resource_id}")
-    aspace_client = ASnakeClient(config_file=args.asnake_config)
-    aspace_containers = get_aspace_containers(aspace_client, args.resource_id)
-    logger.info(f"Found {len(aspace_containers)} top containers in ASpace")
 
     # find top containers with existing barcodes
     # add them to a list for later output and remove them from the list of ASpace containers
