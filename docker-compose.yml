@@ -9,6 +9,7 @@ services:
       # For access to remote resources via ssh tunnel on host
       - "host.docker.internal:host-gateway"
       - "uclalsc-test.lyrasistechnology.org:host-gateway"
+      - "uclalsc-staff.lyrasistechnology.org:host-gateway"
 
   archivesspace:
     container_name: as_aspace
