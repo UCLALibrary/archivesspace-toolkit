@@ -1,11 +1,13 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.13-slim-bookworm
 
 # Set correct timezone
 RUN ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
 
 # Install git, required to install the alma_api_client package from github.
 # Add curl as well for testing connectivity.
-RUN apt-get update && apt-get install -y git curl
+# Add dependencies for building mysqlclient python package.
+RUN apt-get update && \
+    apt-get install -y git curl python3-dev default-libmysqlclient-dev build-essential pkg-config
 
 # Create generic user and group
 RUN useradd -c "generic app user" -d /home/aspace -s /bin/bash -m aspace
