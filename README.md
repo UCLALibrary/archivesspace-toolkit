@@ -92,3 +92,19 @@ There is a default ArchivesSnake configuration file in `python/.archivessnake.ym
 For other configurations, copy `python/.archivessnake.yml` to `python/.archivessnake_secret_DEV.yml` or `python/.archivessnake_secret_TEST.yml`, and edit the `baseurl`, `username`, and `password` fields as appropriate.  These files must be in the `python` directory to be available within the container.
 
 These are excluded from the repository, so contact a teammate if you need specific credentials.
+
+## Accessing hosted databases (UCLA only)
+
+When running against hosted systems (UCLA's test and production ArchivesSpace instances), some APIs can time out (for example, getting top containers for a resource, where some of our resources have thousands of containers). An alternative is to read data from the database, manipulate it as needed, then call APIs as usual to update data.
+
+The hosted databases are IP-restricted, and must be accessed via tunneled connections.  To set up the connections, run one of the following on the support server we use, `p-u-exlsupport01.library.ucla.edu`:
+```
+# Connect to TEST database
+### TBD - waiting for vendor to set this up ###
+
+# Connect to PROD database
+ssh -i ~/.ssh/id_aspace_ssh -NT -L \
+3306:aspace-hosting-production-db-shared-p1.lyrtech.org:3306 \
+ucla-kohler@aspace-hosting-production-bastion.lyrtech.org
+```
+This tunnel runs in the foreground, so you'll need to open a second connection to run programs which need it.
