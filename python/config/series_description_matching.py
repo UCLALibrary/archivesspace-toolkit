@@ -73,7 +73,9 @@ def match_containers(
 def _get_aspace_match_data(
     aspace_containers: list, logger: Optional[Any] = None
 ) -> tuple[dict[tuple, list[tuple]]]:
-    """Parses ASpace top container indicators and types into a dictionary."""
+    """Parses ASpace top container indicators into indicator and series and extracts the type.
+    Returns a dictionary with the indicator, type, and series as keys, and a list of top
+    containers with duplicate keys."""
     match_data = {}
     tcs_with_duplicate_keys = []
     for tc in aspace_containers:
@@ -130,6 +132,8 @@ def _get_alma_match_data(
 ) -> tuple[dict[tuple], list[tuple]]:
     """Parses Alma item descriptions into container type, indicator, and series
     and normalizes the indicator by removing leading zeroes and trailing " RESTRICTED".
+    Returns a dictionary with the normalized indicator, type, and series as keys, and
+    a list of items with duplicate keys.
     """
     match_data = {}
     items_with_duplicate_keys = []
