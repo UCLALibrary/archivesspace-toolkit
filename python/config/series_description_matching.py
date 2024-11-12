@@ -2,6 +2,27 @@ from typing import Optional, Any
 import re
 
 
+def parse_aspace_indicator(tc_indicator_with_series: str) -> tuple[str, str]:
+    """Parses ASpace top container indicator with series into indicator and series.
+    Returns a tuple with the indicator and series."""
+
+    # check if the indicator is a digit - format should be 123XYZ
+    if tc_indicator_with_series[0].isdigit():
+        parsed_indicators = re.findall(r"(\d+)(\w+)", tc_indicator_with_series)
+        # if we have no matches or more than one match, indicator is not in the expected format
+        if len(parsed_indicators) != 1:
+            return None, None
+        (tc_indicator, tc_series) = parsed_indicators[0]
+
+    # otherwise, format should be XYZ-123
+    else:
+        parsed_indicators = re.findall(r"(\w+)-(\d+)", tc_indicator_with_series)
+        if len(parsed_indicators) != 1:
+            return None, None
+        (tc_series, tc_indicator) = parsed_indicators[0]
+    return tc_indicator, tc_series
+
+
 def get_aspace_match_data(
     aspace_containers: list, logger: Optional[Any] = None
 ) -> tuple[dict[tuple, list[tuple]]]:
@@ -11,22 +32,21 @@ def get_aspace_match_data(
     match_data = {}
     tcs_with_duplicate_keys = []
     for tc in aspace_containers:
-        tc_indicator_with_series = tc.get("indicator")
-        # indicator_with_series may be formatted as "123XYZ" or "XYZ-123"
-        if tc_indicator_with_series[0].isdigit():
-            # DigitsLetter
-            (tc_indicator, tc_series) = re.findall(
-                r"(\d+)(\w+)", tc_indicator_with_series
-            )[0]
-        else:
-            # Letters-Digits
-            (tc_series, tc_indicator) = re.findall(
-                r"(\w+)-(\d+)", tc_indicator_with_series
-            )[0]
-
         tc_type = tc.get("type")
-        # double check for duplicates
-        if (tc_indicator, tc_type, tc_series) in match_data:
+        tc_indicator_with_series = tc.get("indicator")
+        tc_indicator, tc_series = parse_aspace_indicator(tc_indicator_with_series)
+        # if series or indicator is empty, there was a problem parsing the indicator
+        # log an error, but don't skip the top container - it won't be matched and will be
+        # included in the unhandled data.
+        if not tc_series or not tc_indicator:
+            if logger:
+                logger.error(
+                    f"Top container {tc.get('uri')} has an incorrect indicator format:"
+                    f" {tc_indicator_with_series}."
+                )
+
+        # double check for duplicates only if we have a valid indicator and series
+        elif (tc_indicator, tc_type, tc_series) in match_data:
             if logger:
                 logger.error(
                     f"Duplicate top container found:"
