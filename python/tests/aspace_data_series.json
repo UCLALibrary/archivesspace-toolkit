@@ -27,7 +27,7 @@
         "display_string": "RKO Radio Pictures records"
       }
     ],
-    "uri": "/repositories/2/top_containers/44855",
+    "uri": "/repositories/2/top_containers/0000",
     "repository": {
       "ref": "/repositories/2"
     },
@@ -64,7 +64,7 @@
         "display_string": "RKO Radio Pictures records"
       }
     ],
-    "uri": "/repositories/2/top_containers/44855",
+    "uri": "/repositories/2/top_containers/1111",
     "repository": {
       "ref": "/repositories/2"
     },
@@ -101,7 +101,44 @@
         "display_string": "RKO Radio Pictures records"
       }
     ],
-    "uri": "/repositories/2/top_containers/44855",
+    "uri": "/repositories/2/top_containers/2222",
+    "repository": {
+      "ref": "/repositories/2"
+    },
+    "restricted": false,
+    "is_linked_to_published_record": true,
+    "display_string": "Box 1009M: Series Series 1.",
+    "long_display_string": "Box 1009M, PASC--0003, RKO Radio Pictures records, Series Series 1."
+  },
+  {
+    "lock_version": 1,
+    "indicator": "INVALID",
+    "created_by": "admin",
+    "last_modified_by": "admin",
+    "create_time": "2018-06-05T22:36:18Z",
+    "system_mtime": "2022-09-30T22:49:41Z",
+    "user_mtime": "2018-06-05T22:36:18Z",
+    "type": "box",
+    "jsonmodel_type": "top_container",
+    "active_restrictions": [],
+    "container_locations": [],
+    "series": [
+      {
+        "ref": "/repositories/2/archival_objects/405228",
+        "identifier": "Series 1.",
+        "display_string": "Feature Films and Shorts, ca.1922-1956",
+        "level_display_string": "Series",
+        "publish": true
+      }
+    ],
+    "collection": [
+      {
+        "ref": "/repositories/2/resources/1273",
+        "identifier": "PASC--0003",
+        "display_string": "RKO Radio Pictures records"
+      }
+    ],
+    "uri": "/repositories/2/top_containers/3333",
     "repository": {
       "ref": "/repositories/2"
     },

@@ -3,8 +3,8 @@ import os
 import json
 from config.base_match import match_containers
 from config.series_description_matching import (
-    get_alma_match_data as box_get_alma_match_data,
-    get_aspace_match_data as box_get_aspace_match_data,
+    get_alma_match_data as series_get_alma_match_data,
+    get_aspace_match_data as series_get_aspace_match_data,
 )
 
 # Get the directory of the test file
@@ -29,8 +29,10 @@ class TestSeriesMapping(unittest.TestCase):
         # "ser.C box.0025" = 25C
         alma_items = [alma_data[0]]
         aspace_containers = [aspace_data[0]]
-        alma_match_data, items_with_duplicate_keys = box_get_alma_match_data(alma_items)
-        aspace_match_data, tcs_with_duplicate_keys = box_get_aspace_match_data(
+        alma_match_data, items_with_duplicate_keys = series_get_alma_match_data(
+            alma_items
+        )
+        aspace_match_data, tcs_with_duplicate_keys = series_get_aspace_match_data(
             aspace_containers
         )
         matched_aspace_containers, unhandled_data = match_containers(
@@ -53,8 +55,10 @@ class TestSeriesMapping(unittest.TestCase):
         # "ser.C box.0026" = 26-C
         alma_items = [alma_data[1]]
         aspace_containers = [aspace_data[1]]
-        alma_match_data, items_with_duplicate_keys = box_get_alma_match_data(alma_items)
-        aspace_match_data, tcs_with_duplicate_keys = box_get_aspace_match_data(
+        alma_match_data, items_with_duplicate_keys = series_get_alma_match_data(
+            alma_items
+        )
+        aspace_match_data, tcs_with_duplicate_keys = series_get_aspace_match_data(
             aspace_containers
         )
         matched_aspace_containers, unhandled_data = match_containers(
@@ -72,13 +76,15 @@ class TestSeriesMapping(unittest.TestCase):
             alma_items[0]["barcode"],
         )
 
-    def test_no_match_container_invalid_tc_indicator(self):
-        # third aspace_data item has an invalid top container indicator
-        # "C-26, C-27, and C-28" - should not match any alma_data items
-        alma_items = alma_data
-        aspace_containers = [aspace_data[2]]
-        alma_match_data, items_with_duplicate_keys = box_get_alma_match_data(alma_items)
-        aspace_match_data, tcs_with_duplicate_keys = box_get_aspace_match_data(
+    def test_multiple_invalid_aspace_indicators(self):
+        # third and fourth aspace_data items have an invalid top container indicator
+        # "C-26, C-27, and C-28" and "INVALID" - should not match any alma_data items
+        alma_items = alma_data[0:2]
+        aspace_containers = aspace_data[2:4]
+        alma_match_data, items_with_duplicate_keys = series_get_alma_match_data(
+            alma_items
+        )
+        aspace_match_data, tcs_with_duplicate_keys = series_get_aspace_match_data(
             aspace_containers
         )
         matched_aspace_containers, unhandled_data = match_containers(
@@ -87,6 +93,6 @@ class TestSeriesMapping(unittest.TestCase):
         )
         self.assertEqual(len(matched_aspace_containers), 0)
         self.assertEqual(len(unhandled_data["unmatched_alma_items"]), 2)
-        self.assertEqual(len(unhandled_data["unmatched_aspace_containers"]), 0)
+        self.assertEqual(len(unhandled_data["unmatched_aspace_containers"]), 2)
         self.assertEqual(len(items_with_duplicate_keys), 0)
         self.assertEqual(len(tcs_with_duplicate_keys), 0)

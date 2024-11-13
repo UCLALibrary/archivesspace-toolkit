@@ -35,15 +35,17 @@ def get_aspace_match_data(
         tc_type = tc.get("type")
         tc_indicator_with_series = tc.get("indicator")
         tc_indicator, tc_series = parse_aspace_indicator(tc_indicator_with_series)
-        # if series or indicator is empty, there was a problem parsing the indicator
-        # log an error, but don't skip the top container - it won't be matched and will be
-        # included in the unhandled data.
+        # if series or indicator is empty, there was a problem parsing the indicator.
+        # log an error, and set match_data to the URI, which will be a unique key
+        # this way it won't match any Alma items, and will be reported as unhandled data
         if not tc_series or not tc_indicator:
             if logger:
                 logger.error(
                     f"Top container {tc.get('uri')} has an incorrect indicator format:"
                     f" {tc_indicator_with_series}."
                 )
+            match_data[tc.get("uri")] = tc
+            continue
 
         # double check for duplicates only if we have a valid indicator and series
         elif (tc_indicator, tc_type, tc_series) in match_data:
