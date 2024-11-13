@@ -6,7 +6,7 @@ def parse_aspace_indicator(tc_indicator_with_series: str) -> tuple[str, str]:
     """Parses ASpace top container indicator with series into indicator and series.
     Returns a tuple with the indicator and series."""
 
-    # check if the indicator is a digit - format should be 123XYZ
+    # check if the indicator starts with a digit - format should be 123XYZ
     if tc_indicator_with_series[0].isdigit():
         parsed_indicators = re.findall(r"(\d+)(\w+)", tc_indicator_with_series)
         # if we have no matches or more than one match, indicator is not in the expected format
