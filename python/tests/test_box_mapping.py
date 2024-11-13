@@ -11,8 +11,8 @@ from config.box_description_matching import (
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Construct absolute paths for the test data files
-alma_data_path = os.path.join(current_dir, "alma_data_bradley.json")
-aspace_data_path = os.path.join(current_dir, "aspace_data_bradley.json")
+alma_data_path = os.path.join(current_dir, "alma_data_box.json")
+aspace_data_path = os.path.join(current_dir, "aspace_data_box.json")
 
 # Load the test data files
 with open(alma_data_path, "r") as alma_data_file:
@@ -22,7 +22,7 @@ with open(aspace_data_path, "r") as aspace_data_file:
     aspace_data = json.load(aspace_data_file)
 
 
-class TestBradleyMapping(unittest.TestCase):
+class TestBoxMapping(unittest.TestCase):
     # use box_description_matching versions of get_data functions
 
     def test_match_containers(self):
