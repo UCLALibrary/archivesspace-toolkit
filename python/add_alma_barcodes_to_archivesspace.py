@@ -8,6 +8,7 @@ from asnake.client import ASnakeClient
 from MySQLdb import connect, Connection
 from MySQLdb.cursors import DictCursor
 import asnake.logging as logging
+from config.base_match import match_containers
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -62,7 +63,9 @@ def _get_container_refs_from_db(mysql_client: Connection, resource_id: int) -> s
     return container_refs
 
 
-def get_aspace_containers(container_refs: set[str]) -> list[str]:
+def get_aspace_containers(
+    aspace_client: ASnakeClient, container_refs: set[str]
+) -> list[str]:
     """
     Given a set of top container ref URIs, obtain the full container data as JSON
     for each one that linked to a published resource.
@@ -135,7 +138,8 @@ if __name__ == "__main__":
 
     # load profile module
     profile_module = import_module(args.profile)
-    match_containers = getattr(profile_module, "match_containers")
+    get_alma_match_data = getattr(profile_module, "get_alma_match_data")
+    get_aspace_match_data = getattr(profile_module, "get_aspace_match_data")
 
     logger.info(f"Getting ASpace top containers for resource {args.resource_id}")
     aspace_client = ASnakeClient(config_file=args.asnake_config)
@@ -155,7 +159,7 @@ if __name__ == "__main__":
     else:
         container_refs = _get_container_refs_from_api(aspace_client, args.resource_id)
 
-    aspace_containers = get_aspace_containers(container_refs)
+    aspace_containers = get_aspace_containers(aspace_client, container_refs)
     logger.info(f"Found {len(aspace_containers)} top containers in ASpace")
 
     logger.info(f"Using Alma API key for {args.alma_environment} environment")
@@ -171,12 +175,23 @@ if __name__ == "__main__":
             tc for tc in aspace_containers if tc not in top_containers_with_barcodes
         ]
 
+    # get match data for Alma items and ASpace top containers
+    aspace_match_data, tcs_with_duplicate_keys = get_aspace_match_data(
+        aspace_containers, logger
+    )
+    alma_match_data, items_with_duplicate_keys = get_alma_match_data(alma_items, logger)
+    # match Alma items with ASpace top containers
     matched_aspace_containers, unhandled_data = match_containers(
-        alma_items, aspace_containers, logger
+        alma_match_data,
+        aspace_match_data,
+        logger,
     )
 
     # add top containers with existing barcodes to unhandled data for output
     unhandled_data["top_containers_with_barcodes"] = top_containers_with_barcodes
+    # add items and top containers with duplicate keys to unhandled data for output
+    unhandled_data["items_with_duplicate_keys"] = items_with_duplicate_keys
+    unhandled_data["tcs_with_duplicate_keys"] = tcs_with_duplicate_keys
 
     # update ASpace top containers with barcodes
     for tc in matched_aspace_containers:

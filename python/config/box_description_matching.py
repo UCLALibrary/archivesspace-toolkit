@@ -1,76 +1,7 @@
 from typing import Optional, Any
 
 
-def match_containers(
-    alma_items: list[dict], aspace_containers: list[dict], logger: Optional[Any] = None
-) -> tuple[list[dict], dict[dict]]:
-    """
-    Matches Alma items with ASpace top containers and adds barcodes to the matched top containers.
-    Also returns lists of unmatched Alma items and ASpace top containers.
-
-    Args:
-        alma_items: list of Alma items (JSON data as obtained from Alma API)
-        aspace_containers: list of ASpace top containers (JSON data as obtained from ASpace API)
-
-    Returns:
-        tuple containing two elements:
-            matched_aspace_containers - list of JSON data elements with barcodes added,
-            unhandled_data - dict containing:
-                unmatched_alma_items - list of unmatched items (JSON from Alma API),
-                unmatched_aspace_containers - list of unmatched containers (JSON from ASpace API),
-                items_with_duplicate_keys - list of Alma items with duplicate keys
-                    (tuple of PID, indicator, type),
-                tcs_with_duplicate_keys - list of JSON data elements with duplicate keys
-                    (tuple of URI, indicator, type)
-    """
-    # get match data for Alma items and ASpace top containers
-    alma_match_data, items_with_duplicate_keys = _get_alma_match_data(
-        alma_items, logger
-    )
-    aspace_match_data, tcs_with_duplicate_keys = _get_aspace_match_data(
-        aspace_containers, logger
-    )
-
-    # find matches by comparing keys in _match_data dictionaries
-    matched_aspace_containers = []
-    for alma_key, alma_item in alma_match_data.items():
-        if alma_key in aspace_match_data:
-            tc = aspace_match_data[alma_key]
-            # get barcode from Alma item and add it to ASpace top container
-            barcode = alma_item.get("barcode")
-            tc["barcode"] = barcode
-            matched_aspace_containers.append(tc)
-
-            if logger:
-                logger.info(
-                    f"Matched item {alma_item.get('pid')} "
-                    f"with top container {tc.get('uri')}"
-                )
-
-    # find unmatched Alma items and ASpace top containers
-    alma_keys = set(alma_match_data.keys())
-    aspace_keys = set(aspace_match_data.keys())
-
-    unmatched_alma_keys = alma_keys - aspace_keys
-    unmatched_aspace_keys = aspace_keys - alma_keys
-
-    unmatched_alma_items = [alma_match_data[key] for key in unmatched_alma_keys]
-    unmatched_aspace_containers = [
-        aspace_match_data[key] for key in unmatched_aspace_keys
-    ]
-
-    # assemble unhandled data dict
-    unhandled_data = {
-        "unmatched_alma_items": unmatched_alma_items,
-        "unmatched_aspace_containers": unmatched_aspace_containers,
-        "items_with_duplicate_keys": items_with_duplicate_keys,
-        "tcs_with_duplicate_keys": tcs_with_duplicate_keys,
-    }
-
-    return matched_aspace_containers, unhandled_data
-
-
-def _get_aspace_match_data(
+def get_aspace_match_data(
     aspace_containers: list, logger: Optional[Any] = None
 ) -> tuple[dict[tuple, list[tuple]]]:
     """Parses ASpace top container indicators and types into a dictionary."""
@@ -99,7 +30,7 @@ def _get_aspace_match_data(
     return match_data, tcs_with_duplicate_keys
 
 
-def _get_alma_match_data(
+def get_alma_match_data(
     alma_items: list, logger: Optional[Any] = None
 ) -> tuple[dict[tuple], list[tuple]]:
     """Parses Alma item descriptions into container type and indicator,
