@@ -37,7 +37,8 @@ def get_aspace_match_data(
         tc_indicator, tc_series = parse_aspace_indicator(tc_indicator_with_series)
 
         # normalize capitalization of series - all uppercase
-        tc_series = tc_series.upper()
+        if tc_series:
+            tc_series = tc_series.upper()
 
         # if series or indicator is empty, there was a problem parsing the indicator.
         # log an error, and set match_data to the URI, which will be a unique key
