@@ -111,6 +111,104 @@ def write_json_to_file(data: list[dict], filename: str) -> None:
         json.dump(data, f, indent=2)
 
 
+def format_unhandled_data_for_printing(unhandled_data: dict) -> str:
+    """
+    Formats the unhandled data dictionary for printing to the console.
+    """
+    # get descriptions of unmatched alma items, and sort them
+    unmatched_alma_items = unhandled_data.get("unmatched_alma_items")
+    unmatched_alma_items_desc = [
+        f"{item.get('description')} ({item.get('barcode')})"
+        for item in unmatched_alma_items
+    ]
+    unmatched_alma_items_desc.sort()
+
+    # get indicators of unmatched aspace top containers, and sort them
+    unmatched_aspace_containers = unhandled_data.get("unmatched_aspace_containers")
+    # we'll want to sort the indicators as numbers, not strings
+    # so add a sort key to the list of top containers
+    # the sort key is the integer value of the indicator, or 0 if it's not a number
+    # (so it will sort to the top)
+    unmatched_aspace_containers_desc = [
+        [
+            int(tc.get("indicator")) if tc.get("indicator").isdigit() else 0,
+            f"{tc.get('indicator')} ({tc.get('uri')})",
+        ]
+        for tc in unmatched_aspace_containers
+    ]
+
+    unmatched_aspace_containers_desc.sort()
+    # remove the sort key
+    unmatched_aspace_containers_desc = [
+        tc[1] for tc in unmatched_aspace_containers_desc
+    ]
+
+    # get descriptions of top containers with existing barcodes, and sort them
+    top_containers_with_barcodes = unhandled_data.get("top_containers_with_barcodes")
+    top_containers_with_barcodes_desc = [
+        f"{tc.get('indicator')} ({tc.get('uri')})"
+        for tc in top_containers_with_barcodes
+    ]
+
+    # get descriptions of items with duplicate keys, and sort them
+    # the format of these lists varies, so output all the data
+    items_with_duplicate_keys = unhandled_data.get("items_with_duplicate_keys")
+
+    # get descriptions of top containers with duplicate keys, and sort them
+    # the format of these lists varies, so output all the data
+    tcs_with_duplicate_keys = unhandled_data.get("tcs_with_duplicate_keys")
+
+    # format the data for printing
+    output = "Unhandled data:\n" "Unmatched Alma items:\n"
+    for item in unmatched_alma_items_desc:
+        output += f"{item}\n"
+    output += "\nUnmatched ASpace top containers:\n"
+    for tc in unmatched_aspace_containers_desc:
+        output += f"{tc}\n"
+    output += "\nASpace top containers with existing barcodes:\n"
+    for tc in top_containers_with_barcodes_desc:
+        output += f"{tc}\n"
+    output += "\nAlma items with duplicate keys:\n"
+    for item in items_with_duplicate_keys:
+        output += f"{item}\n"
+    output += "\nASpace top containers with duplicate keys:\n"
+    for tc in tcs_with_duplicate_keys:
+        output += f"{tc}\n"
+
+    return output
+
+
+def get_run_summary_info(
+    alma_items: list[dict],
+    aspace_containers: list[dict],
+    matched_aspace_containers: list[dict],
+    unhandled_data: dict,
+) -> list[str]:
+    """
+    Returns a list of strings with summary information about the run.
+    """
+    summary_info = [
+        f"Total Alma items: {len(alma_items)}",
+        f"Total ASpace top containers: {len(aspace_containers)}",
+        f"Matched ASpace top containers: {len(matched_aspace_containers)}",
+        (
+            f"ASpace top containers with existing barcodes:"
+            f" {len(unhandled_data.get('top_containers_with_barcodes'))}"
+        ),
+        f"Unmatched Alma items: {len(unhandled_data.get('unmatched_alma_items'))}",
+        (
+            f"Unmatched ASpace top containers:"
+            f" {len(unhandled_data.get('unmatched_aspace_containers'))}"
+        ),
+        f"Alma items with duplicate keys: {len(unhandled_data.get('items_with_duplicate_keys'))}",
+        (
+            f"ASpace top containers with duplicate keys:"
+            f" {len(unhandled_data.get('tcs_with_duplicate_keys'))}"
+        ),
+    ]
+    return summary_info
+
+
 if __name__ == "__main__":
     # add args for env, holding_id, ASpace resource_id
     parser = argparse.ArgumentParser()
@@ -127,6 +225,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_db",
         help="Get containers from database instead of API",
+        action="store_true",
+    )
+    # dry run option
+    parser.add_argument(
+        "--dry_run",
+        help="Dry run: do not update top containers in ArchivesSpace",
+        action="store_true",
+    )
+    # print output option
+    parser.add_argument(
+        "--print_output",
+        help="Print output to console in addition to writing to log file",
         action="store_true",
     )
     args = parser.parse_args()
@@ -193,37 +303,34 @@ if __name__ == "__main__":
     unhandled_data["items_with_duplicate_keys"] = items_with_duplicate_keys
     unhandled_data["tcs_with_duplicate_keys"] = tcs_with_duplicate_keys
 
-    # update ASpace top containers with barcodes
-    for tc in matched_aspace_containers:
-        aspace_client.post(tc["uri"], json=tc)
-        logger.info(f"Added barcode to top container {tc['uri']}")
+    # update ASpace top containers with barcodes - only if not a dry run
+    if args.dry_run:
+        logger.info("Dry run: no changes made to ASpace top containers")
 
-    logger.info(f"Updated barcodes for {len(matched_aspace_containers)} top containers")
+    else:
+        for tc in matched_aspace_containers:
+            aspace_client.post(tc["uri"], json=tc)
+            logger.info(f"Added barcode to top container {tc['uri']}")
+
+        logger.info(
+            f"Updated barcodes for {len(matched_aspace_containers)} top containers"
+        )
 
     # summary outputs: total number of items and top containers,
     # and numbers of unhanded items and top containers
-    logger.info(f"Total Alma items: {len(alma_items)}")
-    logger.info(f"Total ASpace top containers: {len(aspace_containers)}")
-    logger.info(f"Matched ASpace top containers: {len(matched_aspace_containers)}")
-    logger.info(
-        f"ASpace top containers with existing barcodes:"
-        f" {len(unhandled_data.get('top_containers_with_barcodes'))}"
+    run_summary = get_run_summary_info(
+        alma_items, aspace_containers, matched_aspace_containers, unhandled_data
     )
-    logger.info(
-        f"Unmatched Alma items: {len(unhandled_data.get('unmatched_alma_items'))}"
-    )
-    logger.info(
-        f"Unmatched ASpace top containers:"
-        f" {len(unhandled_data.get('unmatched_aspace_containers'))}"
-    )
-    logger.info(
-        f"Alma items with duplicate keys:"
-        f" {len(unhandled_data.get('items_with_duplicate_keys'))}"
-    )
-    logger.info(
-        f"ASpace top containers with duplicate keys:"
-        f" {len(unhandled_data.get('tcs_with_duplicate_keys'))}"
-    )
+    for message in run_summary:
+        logger.info(message)
+
+    # if print_output is set, print the run summary and unhandled data
+    # to the console in a readable format
+    if args.print_output:
+        for message in run_summary:
+            print(message)
+        print()
+        print(format_unhandled_data_for_printing(unhandled_data))
 
     # if there is any unhandled data, write it to a file
     if unhandled_data:
