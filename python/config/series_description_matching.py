@@ -35,6 +35,11 @@ def get_aspace_match_data(
         tc_type = tc.get("type")
         tc_indicator_with_series = tc.get("indicator")
         tc_indicator, tc_series = parse_aspace_indicator(tc_indicator_with_series)
+
+        # normalize capitalization of series - all uppercase
+        if tc_series:
+            tc_series = tc_series.upper()
+
         # if series or indicator is empty, there was a problem parsing the indicator.
         # log an error, and set match_data to the URI, which will be a unique key
         # this way it won't match any Alma items, and will be reported as unhandled data
@@ -93,6 +98,9 @@ def get_alma_match_data(
         alma_series = description.split(" ")[0].split(".")[1]
         alma_type = description.split(" ")[1].split(".")[0]
         alma_indicator = description.split(" ")[1].split(".")[1]
+
+        # normalize capitalization of series - all uppercase
+        alma_series = alma_series.upper()
 
         # if indicator starts with leading zeroes, remove them
         alma_indicator = alma_indicator.lstrip("0")

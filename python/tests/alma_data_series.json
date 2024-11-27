@@ -174,5 +174,93 @@
       "desc": "Persistent Deposit"
     },
     "retention_note": "Persistent Policy"
+  },
+  {
+    "pid": "23437856460006533",
+    "barcode": "F0000000257",
+    "policy": {
+      "value": "noncirc",
+      "desc": "Non-circulating"
+    },
+    "provenance": {
+      "value": ""
+    },
+    "description": "ser.D box.0001",
+    "library": {
+      "value": "SRLF",
+      "desc": "Southern Regional Library Facility"
+    },
+    "location": {
+      "value": "srar2",
+      "desc": "SRPERF"
+    },
+    "pages": "",
+    "pieces": "1",
+    "requested": "false",
+    "creation_date": "2004-05-22Z",
+    "modification_date": "2011-09-29Z",
+    "base_status": {
+      "value": "1",
+      "desc": "Item in place"
+    },
+    "awaiting_reshelving": "false",
+    "physical_material_type": {
+      "value": "OTHER",
+      "desc": "Other"
+    },
+    "po_line": "",
+    "is_magnetic": "false",
+    "arrival_date": "2004-05-23Z",
+    "year_of_issue": "",
+    "enumeration_a": "ser.C box.0025",
+    "enumeration_b": "",
+    "enumeration_c": "",
+    "enumeration_d": "",
+    "enumeration_e": "",
+    "enumeration_f": "",
+    "enumeration_g": "",
+    "enumeration_h": "",
+    "chronology_i": "",
+    "chronology_j": "",
+    "chronology_k": "",
+    "chronology_l": "",
+    "chronology_m": "",
+    "break_indicator": {
+      "value": ""
+    },
+    "pattern_type": {
+      "value": ""
+    },
+    "linking_number": "",
+    "type_of_unit": "",
+    "receiving_operator": "import",
+    "process_type": {
+      "value": ""
+    },
+    "inventory_number": "",
+    "inventory_price": "",
+    "alternative_call_number": "",
+    "alternative_call_number_type": {
+      "value": ""
+    },
+    "storage_location_id": "",
+    "public_note": "",
+    "fulfillment_note": "",
+    "internal_note_1": "VolEquiv=3.85",
+    "internal_note_2": "",
+    "internal_note_3": "ON_RESERVE: N | RESERVE_CHARGES: 0 | RECALLS_PLACED: 0 | HOLDS_PLACED: 0 | HISTORICAL_BOOKINGS: 0 | SHORT_LOAN_CHARGES: 0 | ",
+    "statistics_note_1": "*Arts Spec Coll",
+    "statistics_note_2": "",
+    "statistics_note_3": "",
+    "physical_condition": {},
+    "committed_to_retain": {
+      "value": "true",
+      "desc": "Yes"
+    },
+    "retention_reason": {
+      "value": "Persistent Deposit",
+      "desc": "Persistent Deposit"
+    },
+    "retention_note": "Persistent Policy"
   }
 ]

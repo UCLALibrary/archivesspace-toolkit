@@ -96,3 +96,28 @@ class TestSeriesMapping(unittest.TestCase):
         self.assertEqual(len(unhandled_data["unmatched_aspace_containers"]), 2)
         self.assertEqual(len(items_with_duplicate_keys), 0)
         self.assertEqual(len(tcs_with_duplicate_keys), 0)
+
+    def test_case_insensitive_series_match(self):
+        # third item in alma_data should match fifth top container in aspace_data
+        # ser.D box.0001 = 1d
+        alma_items = [alma_data[2]]
+        aspace_containers = [aspace_data[4]]
+        alma_match_data, items_with_duplicate_keys = series_get_alma_match_data(
+            alma_items
+        )
+        aspace_match_data, tcs_with_duplicate_keys = series_get_aspace_match_data(
+            aspace_containers
+        )
+        matched_aspace_containers, unhandled_data = match_containers(
+            alma_match_data,
+            aspace_match_data,
+        )
+        self.assertEqual(len(matched_aspace_containers), 1)
+        self.assertEqual(len(unhandled_data["unmatched_alma_items"]), 0)
+        self.assertEqual(len(unhandled_data["unmatched_aspace_containers"]), 0)
+        self.assertEqual(len(items_with_duplicate_keys), 0)
+        self.assertEqual(len(tcs_with_duplicate_keys), 0)
+        self.assertEqual(
+            matched_aspace_containers[0]["barcode"],
+            alma_items[0]["barcode"],
+        )
