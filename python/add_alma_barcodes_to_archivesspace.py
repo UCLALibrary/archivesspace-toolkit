@@ -132,7 +132,7 @@ def format_unhandled_data_for_printing(unhandled_data: dict) -> str:
     unmatched_aspace_containers_desc = [
         [
             int(tc.get("indicator")) if tc.get("indicator").isdigit() else 0,
-            f"{tc.get('indicator')} ({tc.get('uri')})",
+            f"{tc.get('type')} {tc.get('indicator')} ({tc.get('uri')})",
         ]
         for tc in unmatched_aspace_containers
     ]
@@ -146,7 +146,7 @@ def format_unhandled_data_for_printing(unhandled_data: dict) -> str:
     # get descriptions of top containers with existing barcodes, and sort them
     top_containers_with_barcodes = unhandled_data.get("top_containers_with_barcodes")
     top_containers_with_barcodes_desc = [
-        f"{tc.get('indicator')} ({tc.get('uri')})"
+        f"{tc.get('type')} {tc.get('indicator')} ({tc.get('uri')})"
         for tc in top_containers_with_barcodes
     ]
 
