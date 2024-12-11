@@ -143,7 +143,6 @@ def get_alma_items(
 ) -> list[dict]:
     # EXPERIMENT: Get data from file if it exists
     alma_data_file = Path(f"alma_data_{holdings_id}.json")
-
     if alma_data_file.exists():
         logger.info(f"Reading alma data from {alma_data_file}")
         with open(alma_data_file, "r") as f:
@@ -165,33 +164,47 @@ def get_aspace_containers(
     for each one that linked to a published resource.
     Returns a list of qualifying container data.
     """
-    if use_db:
-        db_settings = aspace_client.config.get("database")
-        container_refs = _get_container_refs_from_db(db_settings, resource_id)
+    # EXPERIMENT: Get data from file if it exists
+    aspace_data_file = Path(f"aspace_data_{resource_id}.json")
+    if aspace_data_file.exists():
+        logger.info(f"Reading alma data from {aspace_data_file}")
+        with open(aspace_data_file, "r") as f:
+            containers = json.load(f)
     else:
-        container_refs = _get_container_refs_from_api(aspace_client, resource_id)
+        if use_db:
+            db_settings = aspace_client.config.get("database")
+            container_refs = _get_container_refs_from_db(db_settings, resource_id)
+        else:
+            container_refs = _get_container_refs_from_api(aspace_client, resource_id)
 
-    # the top containers endpoint returns refs, so we need to get the full container JSON
-    containers = []
-    for tc in container_refs:
-        tc_json = aspace_client.get(tc).json()
-        # check that the container is linked to a published resource
-        if not tc_json.get("is_linked_to_published_record"):
-            logger.info(
-                f"Top container {tc_json.get('uri')} is not linked to a published resource"
-            )
-            # skip this container
-            continue
-        containers.append(tc_json)
+        # the top containers endpoint returns refs, so we need to get the full container JSON
+        containers = []
+        for tc in container_refs:
+            tc_json = aspace_client.get(tc).json()
+            # check that the container is linked to a published resource
+            if not tc_json.get("is_linked_to_published_record"):
+                logger.info(
+                    f"Top container {tc_json.get('uri')} is not linked to a published resource"
+                )
+                # skip this container
+                continue
+            containers.append(tc_json)
+        # EXPERIMENT: Store data in file for possible later use.
+        logger.info(f"Writing alma data to {aspace_data_file}")
+        with open(aspace_data_file, "w") as f:
+            json.dump(containers, f)
+
     return containers
 
 
 def main() -> None:
     args: argparse.Namespace = _get_args()
     alma_client = AlmaAPIClient(_get_alma_api_key(args.alma_environment))
+    aspace_client = ASnakeClient(config_file=args.asnake_config)
+
     alma_items = get_alma_items(alma_client, args.bib_id, args.holdings_id)
     logger.info(f"Found {len(alma_items)} items in Alma")
-    aspace_client = ASnakeClient(config_file=args.asnake_config)
+
     aspace_containers = get_aspace_containers(
         aspace_client, args.resource_id, args.use_db
     )
@@ -201,6 +214,7 @@ def main() -> None:
 if __name__ == "__main__":
     # Defining logger here makes it available to all code in this module.
     logger = _get_logger()
-    # For convenience while debugging
-    print(f"Logging to {logging.handler.baseFilename}")
+    # For convenience while debugging, print log name without full container path.
+    print(f"Logging to {Path(logging.handler.baseFilename).name}")
+    # Finally, do everything
     main()
