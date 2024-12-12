@@ -257,9 +257,9 @@ def write_json_to_file(data: list[dict], filename: str) -> None:
         json.dump(data, f, indent=2)
 
 
-def format_unhandled_data_for_printing(unhandled_data: dict) -> str:
+def print_unhandled_data(unhandled_data: dict) -> None:
     """
-    Formats the unhandled data dictionary for printing to the console.
+    Formats the unhandled data dictionary and prints it to the console.
     """
     # get descriptions of unmatched alma items, and sort them
     unmatched_alma_items = unhandled_data.get("unmatched_alma_items")
@@ -304,24 +304,22 @@ def format_unhandled_data_for_printing(unhandled_data: dict) -> str:
     # the format of these lists varies, so output all the data
     tcs_with_duplicate_keys = unhandled_data.get("tcs_with_duplicate_keys")
 
-    # format the data for printing
-    output = "Unhandled data:\n" "Unmatched Alma items:\n"
+    # Print the data.
+    print("Unhandled data:\n" "Unmatched Alma items:\n")
     for item in unmatched_alma_items_desc:
-        output += f"{item}\n"
-    output += "\nUnmatched ASpace top containers:\n"
+        print(f"{item}\n")
+    print("\nUnmatched ASpace top containers:\n")
     for tc in unmatched_aspace_containers_desc:
-        output += f"{tc}\n"
-    output += "\nASpace top containers with existing barcodes:\n"
+        print(f"{tc}\n")
+    print("\nASpace top containers with existing barcodes:\n")
     for tc in top_containers_with_barcodes_desc:
-        output += f"{tc}\n"
-    output += "\nAlma items with duplicate keys:\n"
+        print(f"{tc}\n")
+    print("\nAlma items with duplicate keys:\n")
     for item in items_with_duplicate_keys:
-        output += f"{item}\n"
-    output += "\nASpace top containers with duplicate keys:\n"
+        print(f"{item}\n")
+    print("\nASpace top containers with duplicate keys:\n")
     for tc in tcs_with_duplicate_keys:
-        output += f"{tc}\n"
-
-    return output
+        print(f"{tc}\n")
 
 
 def get_run_summary_info(
@@ -436,7 +434,7 @@ def main() -> None:
         for message in run_summary:
             print(message)
         print()
-        print(format_unhandled_data_for_printing(unhandled_data))
+        print_unhandled_data(unhandled_data)
 
     # if there is any unhandled data, write it to a file
     if unhandled_data:
