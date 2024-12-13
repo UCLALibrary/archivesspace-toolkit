@@ -1,9 +1,9 @@
 import argparse
 import json
+import yaml
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
-from alma_api_keys import API_KEYS
 from alma_api_client import AlmaAPIClient
 from asnake.client import ASnakeClient
 from structlog.stdlib import BoundLogger  # for typehints
@@ -34,12 +34,6 @@ def _get_logger(name: str | None = None) -> BoundLogger:
 def _get_args() -> argparse.Namespace:
     """Returns the command-line arguments for this program."""
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--alma_environment",
-        help="Alma environment (sandbox or production)",
-        choices=["sandbox", "production"],
-        required=True,
-    )
     parser.add_argument("--bib_id", help="Alma bib MMS ID", required=True)
     parser.add_argument("--holdings_id", help="Alma holdings MMS ID", required=True)
     parser.add_argument(
@@ -47,7 +41,9 @@ def _get_args() -> argparse.Namespace:
     )
     parser.add_argument("--profile", help="Path to profile module", required=True)
     parser.add_argument(
-        "--asnake_config", help="Path to ArchivesSnake config file", required=True
+        "--config_file",
+        help="Path to config file with ASpace and Alma info",
+        required=True,
     )
     parser.add_argument(
         "--use_db",
@@ -73,13 +69,11 @@ def _get_args() -> argparse.Namespace:
     return args
 
 
-def _get_alma_api_key(alma_environment: str) -> str:
-    """Returns the Alma API key associated with the given environment."""
-    if alma_environment == "sandbox":
-        alma_api_key = API_KEYS["SANDBOX"]
-    elif alma_environment == "production":
-        alma_api_key = API_KEYS["DIIT_SCRIPTS"]
-    return alma_api_key
+def _get_alma_api_key(config_file: str) -> str:
+    """Returns the Alma API key stored in the config file."""
+    with open(config_file, "r") as f:
+        config = yaml.safe_load(f)
+    return config["alma_config"]["alma_api_key"]
 
 
 def _get_alma_items_from_alma(
@@ -257,9 +251,9 @@ def write_json_to_file(data: list[dict], filename: str) -> None:
         json.dump(data, f, indent=2)
 
 
-def format_unhandled_data_for_printing(unhandled_data: dict) -> str:
+def print_unhandled_data(unhandled_data: dict) -> None:
     """
-    Formats the unhandled data dictionary for printing to the console.
+    Formats the unhandled data dictionary and prints it to the console.
     """
     # get descriptions of unmatched alma items, and sort them
     unmatched_alma_items = unhandled_data.get("unmatched_alma_items")
@@ -304,34 +298,34 @@ def format_unhandled_data_for_printing(unhandled_data: dict) -> str:
     # the format of these lists varies, so output all the data
     tcs_with_duplicate_keys = unhandled_data.get("tcs_with_duplicate_keys")
 
-    # format the data for printing
-    output = "Unhandled data:\n" "Unmatched Alma items:\n"
+    # Print the data.
+    print("Unhandled data:\n" "Unmatched Alma items:\n")
     for item in unmatched_alma_items_desc:
-        output += f"{item}\n"
-    output += "\nUnmatched ASpace top containers:\n"
+        print(f"{item}\n")
+    print("\nUnmatched ASpace top containers:\n")
     for tc in unmatched_aspace_containers_desc:
-        output += f"{tc}\n"
-    output += "\nASpace top containers with existing barcodes:\n"
+        print(f"{tc}\n")
+    print("\nASpace top containers with existing barcodes:\n")
     for tc in top_containers_with_barcodes_desc:
-        output += f"{tc}\n"
-    output += "\nAlma items with duplicate keys:\n"
+        print(f"{tc}\n")
+    print("\nAlma items with duplicate keys:\n")
     for item in items_with_duplicate_keys:
-        output += f"{item}\n"
-    output += "\nASpace top containers with duplicate keys:\n"
+        print(f"{item}\n")
+    print("\nASpace top containers with duplicate keys:\n")
     for tc in tcs_with_duplicate_keys:
-        output += f"{tc}\n"
-
-    return output
+        print(f"{tc}\n")
 
 
-def get_run_summary_info(
+def print_summary_info(
     alma_items: list[dict],
     aspace_containers: list[dict],
     matched_aspace_containers: list[dict],
     unhandled_data: dict,
-) -> list[str]:
+    print_output: bool,
+) -> None:
     """
-    Returns a list of strings with summary information about the run.
+    Writes summary information about the run to the log.
+    If print_output is True, also prints the info to console.
     """
     summary_info = [
         f"Total Alma items: {len(alma_items)}",
@@ -352,7 +346,10 @@ def get_run_summary_info(
             f" {len(unhandled_data.get('tcs_with_duplicate_keys'))}"
         ),
     ]
-    return summary_info
+    for message in summary_info:
+        logger.info(message)
+        if print_output:
+            print(message)
 
 
 def main() -> None:
@@ -362,10 +359,9 @@ def main() -> None:
     print(f"Logging to {logging_filename_base}.log")
 
     args: argparse.Namespace = _get_args()
-    alma_client = AlmaAPIClient(_get_alma_api_key(args.alma_environment))
-    aspace_client = ASnakeClient(config_file=args.asnake_config)
+    alma_client = AlmaAPIClient(_get_alma_api_key(config_file=args.config_file))
+    aspace_client = ASnakeClient(config_file=args.config_file)
 
-    logger.info(f"Using Alma API key for {args.alma_environment} environment")
     alma_items = get_alma_items(
         alma_client, args.bib_id, args.holdings_id, args.use_cache
     )
@@ -412,31 +408,29 @@ def main() -> None:
     # update ASpace top containers with barcodes - only if not a dry run
     if args.dry_run:
         logger.info("Dry run: no changes made to ASpace top containers")
-
     else:
         for tc in matched_aspace_containers:
             aspace_client.post(tc["uri"], json=tc)
             logger.info(f"Added barcode to top container {tc['uri']}")
-
         logger.info(
             f"Updated barcodes for {len(matched_aspace_containers)} top containers"
         )
 
     # summary outputs: total number of items and top containers,
     # and numbers of unhanded items and top containers
-    run_summary = get_run_summary_info(
-        alma_items, aspace_containers, matched_aspace_containers, unhandled_data
+    print_summary_info(
+        alma_items,
+        aspace_containers,
+        matched_aspace_containers,
+        unhandled_data,
+        args.print_output,
     )
-    for message in run_summary:
-        logger.info(message)
 
-    # if print_output is set, print the run summary and unhandled data
-    # to the console in a readable format
+    # If print_output is set, print the unhandled data
+    # to the console in a readable format.
     if args.print_output:
-        for message in run_summary:
-            print(message)
         print()
-        print(format_unhandled_data_for_printing(unhandled_data))
+        print_unhandled_data(unhandled_data)
 
     # if there is any unhandled data, write it to a file
     if unhandled_data:
