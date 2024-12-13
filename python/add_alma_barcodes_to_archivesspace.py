@@ -1,9 +1,9 @@
 import argparse
 import json
+import yaml
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
-from alma_api_keys import API_KEYS
 from alma_api_client import AlmaAPIClient
 from asnake.client import ASnakeClient
 from structlog.stdlib import BoundLogger  # for typehints
@@ -34,12 +34,6 @@ def _get_logger(name: str | None = None) -> BoundLogger:
 def _get_args() -> argparse.Namespace:
     """Returns the command-line arguments for this program."""
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--alma_environment",
-        help="Alma environment (sandbox or production)",
-        choices=["sandbox", "production"],
-        required=True,
-    )
     parser.add_argument("--bib_id", help="Alma bib MMS ID", required=True)
     parser.add_argument("--holdings_id", help="Alma holdings MMS ID", required=True)
     parser.add_argument(
@@ -47,7 +41,9 @@ def _get_args() -> argparse.Namespace:
     )
     parser.add_argument("--profile", help="Path to profile module", required=True)
     parser.add_argument(
-        "--asnake_config", help="Path to ArchivesSnake config file", required=True
+        "--config_file",
+        help="Path to config file with ASpace and Alma info",
+        required=True,
     )
     parser.add_argument(
         "--use_db",
@@ -73,13 +69,11 @@ def _get_args() -> argparse.Namespace:
     return args
 
 
-def _get_alma_api_key(alma_environment: str) -> str:
-    """Returns the Alma API key associated with the given environment."""
-    if alma_environment == "sandbox":
-        alma_api_key = API_KEYS["SANDBOX"]
-    elif alma_environment == "production":
-        alma_api_key = API_KEYS["DIIT_SCRIPTS"]
-    return alma_api_key
+def _get_alma_api_key(config_file: str) -> str:
+    """Returns the Alma API key stored in the config file."""
+    with open(config_file, "r") as f:
+        config = yaml.safe_load(f)
+    return config["alma_config"]["alma_api_key"]
 
 
 def _get_alma_items_from_alma(
@@ -365,10 +359,9 @@ def main() -> None:
     print(f"Logging to {logging_filename_base}.log")
 
     args: argparse.Namespace = _get_args()
-    alma_client = AlmaAPIClient(_get_alma_api_key(args.alma_environment))
-    aspace_client = ASnakeClient(config_file=args.asnake_config)
+    alma_client = AlmaAPIClient(_get_alma_api_key(config_file=args.config_file))
+    aspace_client = ASnakeClient(config_file=args.config_file)
 
-    logger.info(f"Using Alma API key for {args.alma_environment} environment")
     alma_items = get_alma_items(
         alma_client, args.bib_id, args.holdings_id, args.use_cache
     )
@@ -415,12 +408,10 @@ def main() -> None:
     # update ASpace top containers with barcodes - only if not a dry run
     if args.dry_run:
         logger.info("Dry run: no changes made to ASpace top containers")
-
     else:
         for tc in matched_aspace_containers:
             aspace_client.post(tc["uri"], json=tc)
             logger.info(f"Added barcode to top container {tc['uri']}")
-
         logger.info(
             f"Updated barcodes for {len(matched_aspace_containers)} top containers"
         )
