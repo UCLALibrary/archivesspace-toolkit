@@ -322,14 +322,16 @@ def print_unhandled_data(unhandled_data: dict) -> None:
         print(f"{tc}\n")
 
 
-def get_run_summary_info(
+def print_summary_info(
     alma_items: list[dict],
     aspace_containers: list[dict],
     matched_aspace_containers: list[dict],
     unhandled_data: dict,
-) -> list[str]:
+    print_output: bool,
+) -> None:
     """
-    Returns a list of strings with summary information about the run.
+    Writes summary information about the run to the log.
+    If print_output is True, also prints the info to console.
     """
     summary_info = [
         f"Total Alma items: {len(alma_items)}",
@@ -350,7 +352,10 @@ def get_run_summary_info(
             f" {len(unhandled_data.get('tcs_with_duplicate_keys'))}"
         ),
     ]
-    return summary_info
+    for message in summary_info:
+        logger.info(message)
+        if print_output:
+            print(message)
 
 
 def main() -> None:
@@ -422,17 +427,17 @@ def main() -> None:
 
     # summary outputs: total number of items and top containers,
     # and numbers of unhanded items and top containers
-    run_summary = get_run_summary_info(
-        alma_items, aspace_containers, matched_aspace_containers, unhandled_data
+    print_summary_info(
+        alma_items,
+        aspace_containers,
+        matched_aspace_containers,
+        unhandled_data,
+        args.print_output,
     )
-    for message in run_summary:
-        logger.info(message)
 
-    # if print_output is set, print the run summary and unhandled data
-    # to the console in a readable format
+    # If print_output is set, print the unhandled data
+    # to the console in a readable format.
     if args.print_output:
-        for message in run_summary:
-            print(message)
         print()
         print_unhandled_data(unhandled_data)
 
