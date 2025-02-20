@@ -3,3 +3,10 @@ username: admin
 password: admin
 logging_config:
   default_config: DEBUG_TO_FILE
+database:
+  host: db
+  database: archivesspace
+  user: as
+  password: as123
+alma_config:
+  alma_api_key: api_key_goes_here
