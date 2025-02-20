@@ -66,7 +66,7 @@ These are excluded from the repository, so contact a teammate if you need specif
 ## Updating Barcodes
 ### General process
 
-Adding barcodes from Alma to ArchivesSpace requires collaboration between DIIT and the Library Special Collections team. Links to the tables mentioned below are availabe in this confluence page: https://uclalibrary.atlassian.net/wiki/spaces/DEV/pages/598147137/Collections+to+Barcode
+Adding barcodes from Alma to ArchivesSpace requires collaboration between DIIT and the Library Special Collections team. Links to the tables mentioned below are availabe in this confluence page: https://uclalibrary.atlassian.net/wiki/x/QQCnIw
 
 The process is as follows:
 1. LSC identifies collections to be barcoded and updates the "Airtable list of archival collections" table with Alma and ArchivesSpace identifiers.
