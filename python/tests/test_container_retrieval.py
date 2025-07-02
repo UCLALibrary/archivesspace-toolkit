@@ -1,6 +1,5 @@
 import unittest
 from asnake.client import ASnakeClient
-from MySQLdb import connect
 from add_alma_barcodes_to_archivesspace import (
     _get_container_refs_from_api,
     _get_container_refs_from_db,
