@@ -161,6 +161,16 @@ Ask a teammate if you need help accessing the support server.
 
 Alternatively, you can run the script against the test instance from your local machine by setting up a tunneled connection. See the "Connecting to remote instances (UCLA only)" section below for more information. You will need to create a new API configuration file (copy of `.archivessnake.yml`), with an updated `baseurl` of `https://uclalsc-test.lyrasistechnology.org:9000/api` and other credentials as appropriate - ask a teammate if you need these.
 
+### Getting counts of containers by resource ID
+
+The Airtable data provided by LSC can be extended with counts of the containers related to each `Rec ID` using `get_container_counts.py`, in order to get a sense of which collections are largest, and thus which to prioritize for the barcoding process.
+
+The script accepts two arguments:
+1. `--file_name`: path to the CSV export of LSC's Airtable data
+2. `--config_file`: path to the YAML configuration file, which includes database credentials for the target ArchivesSpace instance
+
+With a `bash` session open in the `python` container, run `python get_container_counts.py --file_name {{PATH_TO_LSC_DATA}} --config_file {{PATH_TO_CONFIG_YAML}}`.
+
 ## Rebuilding Solr Index
 
 TBD - all I know for now is this is a long-running process (14 hours so far....)
