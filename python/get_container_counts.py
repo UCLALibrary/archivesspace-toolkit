@@ -57,7 +57,7 @@ def main() -> None:
                     rows_updated_with_counts += 1
                 except ValueError:
                     print(
-                        f"{row["Identifier"]} does not have a valid Rec ID. Skipping..."
+                        f'{row["Identifier"]} does not have a valid Rec ID. Skipping...'
                     )
                     continue
             else:  # set empty string for rows without Rec ID
