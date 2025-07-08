@@ -57,6 +57,13 @@ $ docker compose exec python bash
 $ docker compose exec python python
 ```
 
+## Running tests
+
+Several scripts have tests.  To run tests:
+```
+$ docker compose exec python python -m unittest
+```
+
 ## Loading Data
 
 1. Retrieve the latest production database dump, named `ucla.sql.gz`, from [Box](https://ucla.app.box.com/folder/279154148440) (ask a teammate if you need access).  Move the file to your `archivesspace-toolkit` project directory.
