@@ -10,6 +10,8 @@ services:
       - "host.docker.internal:host-gateway"
       - "uclalsc-test.lyrasistechnology.org:host-gateway"
       - "uclalsc-staff.lyrasistechnology.org:host-gateway"
+    # Keep the container running until stopped via docker compose.
+    command: "sleep infinity"
 
   archivesspace:
     container_name: as_aspace
