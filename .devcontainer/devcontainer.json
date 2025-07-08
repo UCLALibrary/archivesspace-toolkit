@@ -1,31 +1,24 @@
-// For format details, see https://aka.ms/devcontainer.json. For config options, see the
-// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
-	"image": "archivesspace-toolkit-python:latest",
+	"name": "ASpace Python",
+	"dockerComposeFile": "../docker-compose.yml",
+	"service": "python",
+	"workspaceFolder": "/home/aspace/app",
 	"customizations": {
-		"vscode": {
-			"extensions": [
-				"ms-python.python",
-				"ms-python.black-formatter",
-				"ms-python.flake8"
-			]
-		}
-	},
-        "workspaceMount": "source=${localWorkspaceFolder},target=/home/aspace/app,type=bind",
-        "workspaceFolder": "/home/aspace/app"
-
-	// Features to add to the dev container. More info: https://containers.dev/features.
-	// "features": {},
-
-	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
-
-	// Uncomment the next line to run commands after the container is created.
-	// "postCreateCommand": "cat /etc/os-release",
-
-	// Configure tool-specific properties.
-	// "customizations": {},
-
-	// Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.
-	// "remoteUser": "devcontainer"
+			"vscode": {
+					"extensions": [
+							"ms-python.python",
+							"ms-python.black-formatter",
+							"ms-python.flake8"
+					],
+					"settings": {
+							"editor.formatOnSave": true,
+							"python.analysis.typeCheckingMode": "standard",
+							"python.editor.defaultFormatter": "ms-python.black-formatter",
+					"flake8.args": [
+									"--max-line-length=100",
+									"--extend-ignore=E203"
+							]
+					}
+			}
+	}
 }

@@ -2,21 +2,67 @@
 An environment for local development and testing of tools to update UCLA's ArchivesSpace records.
 
 ## Local Setup
-To support both AMD and ARM architectures, we need to build the main ArchivesSpace container image locally. To do this, first clone the ArchivesSpace repo: https://github.com/archivesspace/archivesspace/. Navigate to the main `archivesspace` directory and build the image, tagging it as `archivesspace-local`:
+To support both AMD and ARM architectures, we need to build the main ArchivesSpace container image locally. **Do this only when decided by team, so all developers have the same version.**
+
+To do this, first clone the ArchivesSpace repo: https://github.com/archivesspace/archivesspace/. Navigate to the main `archivesspace` directory and build the image, tagging it as `archivesspace-local`:
 
 `docker build . -t archivesspace-local`
 
-Then, navigate back to this repo's main directory (`archivesspace-toolkit`) and run the containers with `docker compose`: 
+Then, navigate back to this repo's main directory (`archivesspace-toolkit`).
 
-`docker compose up -d`
+### Dev container
 
-Wait until you see the below message in the `as_aspace` container logs:
+This project comes with a basic dev container definition, in `.devcontainer/devcontainer.json`. It's known to work with VS Code,
+and may work with other IDEs like PyCharm.  For VS Code, it also installs the Python, Black (formatter), and Flake8 (linter)
+extensions.
+
+The project's directory is available within the container at `/home/aspace/app`.
+
+### Rebuilding the dev container
+
+VS Code builds its own container from the base image. This container may not always get rebuilt when the base image is rebuilt
+(e.g., if packages are changed via `requirements.txt`).
+
+If needed, rebuild the dev container by:
+1. Close VS Code and wait several seconds for the dev container to shut down (check via `docker ps`).
+2. Delete the dev container.
+   1. `docker images | grep vsc-archivesspace-toolkit` # vsc-archivesspace-toolkit-LONG_HEX_STRING-uid
+   2. `docker image rm -f vsc-archivesspace-toolkit-LONG_HEX_STRING-uid`
+3. Start VS Code as usual.
+
+The system takes 30-60 seconds to start up.  The database should be available quickly, but ArchivesSpace is not fully up until
+you see the below message in the `as_aspace` container logs:
 ```
 Welcome to ArchivesSpace!
 You can now point your browser to http://localhost:8080
 ```
 
-The staff interface will be available at http://localhost:8080, and the public interface will be at http://localhost:8081. Log in with username and password `admin`.
+The staff interface will be available at http://localhost:8080, and the public interface will be at http://localhost:8081. Log in with username and password `admin`,
+or your own credentials if using a copy of the production database (see Loading data, below).
+
+## Running code
+
+Running code from a VS Code terminal within the dev container should just work, e.g.: `python some_script.py` (whatever the specific program is).
+
+Otherwise, run a program via docker compose.  From the project directory:
+
+```
+# Start the system
+$ docker compose up -d
+
+# Open a shell in the container
+$ docker compose exec python bash
+
+# Open a Python shell in the container
+$ docker compose exec python python
+```
+
+## Running tests
+
+Several scripts have tests.  To run tests:
+```
+$ docker compose exec python python -m unittest
+```
 
 ## Loading Data
 
@@ -96,7 +142,7 @@ The script also takes the following optional arguments:
 
 With all containers running, run the script from the main project directory:
 ```bash
-docker compose run python python add_alma_barcodes_to_archivesspace.py \
+docker compose exec python python add_alma_barcodes_to_archivesspace.py \
     --bib_id 123456789 \
     --holdings_id 987654321 \
     --resource_id 1234 \
@@ -181,7 +227,7 @@ All API access is handled by the main application service, `archivesspace`, on p
 `curl` example, for now:
 ```
 # Open bash session on python container
-docker compose run python bash
+docker compose exec python bash
 
 # Authenticate
 curl -s -F password="admin" "http://archivesspace:8089/users/admin/login"

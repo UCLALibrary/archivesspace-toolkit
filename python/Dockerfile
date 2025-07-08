@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm
+FROM python:3.11-slim-bookworm
 
 # Set correct timezone
 RUN ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
