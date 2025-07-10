@@ -51,6 +51,7 @@ services:
     container_name: as_solr
     build:
       context: ./solr
+    # For solr-create, -c is core name, -d is config directory
     command: solr-create -p 8983 -c archivesspace -d archivesspace
     ports:
       - "8983:8983"

@@ -70,15 +70,16 @@ $ docker compose exec python python -m unittest
 2. Start your local system, if not already up: `docker compose up -d`, and wait for the application to be ready.
 3. Run the following to load the data.  Since database storage is persisted via volume on the host, this will use about 2.7 GB of local storage on your computer.  This will take several minutes, depending on computer:
 ```
-gunzip -dc ucla.sql.gz | docker compose exec -T db mysql -D archivesspace -u root -p123456
+gunzip -dc ucla.sql.gz | docker compose exec -T db mysql -D ucla -u root -p123456
 
 # This unzips the database dump to STDOUT, pipes it to mysql running on the db service, loading the data
-# into the archivesspace database. The mysql user must be root; password 123456 comes from .docker-compose_db.env.
+# into the ucla database. The mysql user must be root; password 123456 and the MYSQL_DATABASE name
+# come from .docker-compose_db.env.
 ```
 4. Ignore the warning: `mysql: [Warning] Using a password on the command line interface can be insecure.`
 5. Quick verification of data load: 
 ```
-docker compose exec db mysql -D archivesspace -u as -pas123 -e 'select count(*) from repository;'
+docker compose exec db mysql -D ucla -u as -pas123 -e 'select count(*) from repository;'
 +----------+
 | count(*) |
 +----------+
@@ -97,7 +98,7 @@ After a database refresh from production, the initial local `admin/admin` accoun
 
 To set the admin password to be the same as the production password for your own user, run this after changing `YOUR_ASPACE_USERNAME` to the appropriate value:
 ```
-docker compose exec db mysql -D archivesspace -u as -pas123 \
+docker compose exec db mysql -D ucla -u as -pas123 \
 -e 'update auth_db as t1, (select * from auth_db where username = "YOUR_ASPACE_USERNAME") as t2 set t1.pwhash = t2.pwhash where t1.username = "admin";'
 ```
 
