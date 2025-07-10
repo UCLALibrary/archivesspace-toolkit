@@ -5,7 +5,7 @@ logging_config:
   default_config: DEBUG_TO_FILE
 database:
   host: db
-  database: archivesspace
+  database: ucla
   user: as
   password: as123
 alma_config:
