@@ -406,36 +406,39 @@ def print_summary_info(
 
 
 def _remove_barcodes_from_aspace(
-    aspace_client: ASnakeClient, resource_id: int, dry_run: bool
+    aspace_client: ASnakeClient, args: argparse.Namespace
 ) -> None:
     """Removes barcodes in ASpace from top containers related to the provided resource ID.
 
-    :param aspace_client: ASnakeClient instance for ASpace environment.
-    :param resource_id: The target resource ID in ASpace.
-    :param dry_run: If True, run in dry run mode, otherwise run live.
+    :param ASnakeClient aspace_client: ASnakeClient instance for ASpace environment.
+    :param argparse.Namespace: CLI arguments for this program.
     """
 
     print("Retrieving container information from ASpace...")
-    container_refs = _get_container_refs_from_api(aspace_client, resource_id)
-    aspace_containers = _get_containers_from_container_refs(
-        aspace_client, container_refs
+    aspace_containers = get_aspace_containers(
+        aspace_client=aspace_client,
+        resource_id=args.resource_id,
+        use_db=args.use_db,
+        use_cache=args.use_cache,
     )
     # Make sure returned containers have barcodes
     top_containers_with_barcodes = [tc for tc in aspace_containers if tc.get("barcode")]
 
     if not top_containers_with_barcodes:
-        print(f"No top containers with barcodes found for Resource ID {resource_id}")
+        print(
+            f"No top containers with barcodes found for Resource ID {args.resource_id}"
+        )
         return
 
     confirmation = input(
         f"Are you sure you want to remove {len(top_containers_with_barcodes)} "
-        f"barcodes for Resource ID {resource_id} in ArchivesSpace?"
+        f"barcodes for Resource ID {args.resource_id} in ArchivesSpace?"
         " (y/N): "
     )
 
     if confirmation and confirmation.lower() in "yes":
-        print(f"Undoing barcoding for ASpace Resource ID {resource_id}...")
-        if dry_run:
+        print(f"Undoing barcoding for ASpace Resource ID {args.resource_id}...")
+        if args.dry_run:
             message = (
                 "Running in dry run mode..."
                 f"would remove barcodes from {len(top_containers_with_barcodes)} top containers "
@@ -444,7 +447,7 @@ def _remove_barcodes_from_aspace(
             logger.info(message)
             print(message)
             return
-        # Delete barcodes using fetches container refs
+        # Delete barcodes using fetched container refs
         for tc in top_containers_with_barcodes:
             del tc["barcode"]
             aspace_client.post(tc["uri"], json=tc)
@@ -452,7 +455,7 @@ def _remove_barcodes_from_aspace(
 
         message = (
             f"Removed barcodes from {len(top_containers_with_barcodes)} "
-            f"top containers related to ASpace Resource ID {resource_id}"
+            f"top containers related to ASpace Resource ID {args.resource_id}"
         )
         logger.info(message)
         print(message)
@@ -464,6 +467,7 @@ def _remove_barcodes_from_aspace(
 
 def main() -> None:
     """Add barcodes pulled from Alma records to matching records in ArchivesSpace."""
+
     # For convenience while debugging, print log name without full container path.
     # Also used in names of some output files.
     logging_filename_base = Path(logging.handler.baseFilename).stem
@@ -474,7 +478,7 @@ def main() -> None:
     aspace_client = ASnakeClient(config_file=args.config_file)
 
     if args.undo_barcoding:
-        _remove_barcodes_from_aspace(aspace_client, args.resource_id, args.dry_run)
+        _remove_barcodes_from_aspace(aspace_client, args)
         return
 
     alma_items = get_alma_items(
