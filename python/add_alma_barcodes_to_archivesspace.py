@@ -14,12 +14,13 @@ from config.base_match import match_containers
 
 
 def _get_logger(name: str | None = None) -> BoundLogger:
-    """
-    Returns a logger for the current application. This is provided by
+    """Returns a logger for the current application. This is provided by
     the asnake.logging package, which uses structlog.
     A unique log filename is created using the current time, and log messages
     will use the name in the 'logger' field.
     If name not supplied, the name of the current script is used.
+
+    :param str name: Filename for the log. Defaults to None.
     """
     if not name:
         # Use base filename of current script.
@@ -32,7 +33,10 @@ def _get_logger(name: str | None = None) -> BoundLogger:
 
 
 def _get_args() -> argparse.Namespace:
-    """Returns the command-line arguments for this program."""
+    """Returns the command-line arguments for this program.
+
+    :return: Parsed CLI arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--bib_id", help="Alma bib MMS ID", required=True)
     parser.add_argument("--holdings_id", help="Alma holdings MMS ID", required=True)
@@ -65,12 +69,20 @@ def _get_args() -> argparse.Namespace:
         help="Read Alma and ASpace data from cached files (if available)",
         action="store_true",
     )
+    parser.add_argument(
+        "--undo_barcoding",
+        help="Remove barcodes from ASpace for the collection specified by resource_id",
+        action="store_true",
+    )
     args = parser.parse_args()
     return args
 
 
 def _get_alma_api_key(config_file: str) -> str:
-    """Returns the Alma API key stored in the config file."""
+    """Returns the Alma API key stored in the config file.
+
+    :param str config_file: YAML configuration file with connection details.
+    """
     with open(config_file, "r") as f:
         config = yaml.safe_load(f)
     return config["alma_config"]["alma_api_key"]
@@ -79,9 +91,13 @@ def _get_alma_api_key(config_file: str) -> str:
 def _get_alma_items_from_alma(
     alma_client: AlmaAPIClient, bib_id: str, holdings_id: str
 ) -> list[dict]:
-    """
-    Returns item data from Alma for the given bib_id and holdings_id.
+    """Returns item data from Alma for the given bib_id and holdings_id.
     The data is a list of dictionaries, each containing Alma data for one item.
+
+    :param alma_client: AlmaAPIClient instance.
+    :param str bib_id: Bib ID (AKA MMS ID) for the target collection.
+    :param str holdings_id: Holdiings ID for the target collection.
+    :return: A list of dictionaries representing Alma items.
     """
     alma_items = []
     offset = 0
@@ -103,11 +119,14 @@ def _get_alma_items_from_alma(
 def _get_container_refs_from_api(
     aspace_client: ASnakeClient, resource_id: int
 ) -> set[str]:
-    """
-    Returns a de-duped set of _ref_ top container URIs for the given resource_id,
+    """Returns a de-duped set of _ref_ top container URIs for the given resource_id,
     obtained via API call.
     This API call can fail via timeout in hosted environments, when
     more than a few thousand containers are associated with the resource.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int resource_id: ASpace resource ID for target collection.
+    :return: A set of container refs.
     """
     url = f"/repositories/2/resources/{resource_id}/top_containers"
     container_refs = aspace_client.get(url).json()
@@ -116,11 +135,14 @@ def _get_container_refs_from_api(
 
 
 def _get_container_refs_from_db(db_settings: dict, resource_id: int) -> set[str]:
-    """
-    Returns a de-duped set of _ref_ top container URIs for the given resource_id,
+    """Returns a de-duped set of _ref_ top container URIs for the given resource_id,
     obtained via database query.
     This is intended as an alternative for resources with more than a few thousand
     containers, as the API call may time out.
+
+    :param dict db_settings: A dict with DB connection details.
+    :param int resource_id: ASpace resource ID for target collection.
+    :return: A set of container refs.
     """
     mysql_client = connect(
         host=db_settings.get("host"),
@@ -155,6 +177,12 @@ def _get_container_refs_from_db(db_settings: dict, resource_id: int) -> set[str]
 def _get_containers_from_container_refs(
     aspace_client: ASnakeClient, container_refs: set[str]
 ) -> list[str]:
+    """Returns a list of container data, given a set of container refs.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param set[str] container_refs: A set of container refs.
+    :return: A list of containers.
+    """
     containers = []
     for tc in container_refs:
         tc_json = aspace_client.get(tc).json()
@@ -170,9 +198,11 @@ def _get_containers_from_container_refs(
 
 
 def _get_cached_data_from_file(filename: str) -> list[dict]:
-    """
-    Reads data from the given file and returns it.
+    """Reads data from the given file and returns it.
     For this project, data will be list[dict], but this method does not enforce that.
+
+    :param str filename: Filename of cache file.
+    :return: A list of Alma items.
     """
     data_file = Path(filename)
     if data_file.exists():
@@ -185,9 +215,11 @@ def _get_cached_data_from_file(filename: str) -> list[dict]:
 
 
 def _store_cached_data_in_file(data: list[dict], filename: str) -> None:
-    """
-    Stores data in the given file for possible later use.
+    """Stores data in the given file for possible later use.
     For this project, data will be list[dict], but this method does not enforce that.
+
+    :param list[dict] data: A list of Alma items.
+    :param str filename: Filename for cache file.
     """
     logger.info(f"Writing data to {filename}")
     with open(filename, "w") as f:
@@ -197,11 +229,16 @@ def _store_cached_data_in_file(data: list[dict], filename: str) -> None:
 def get_alma_items(
     alma_client: AlmaAPIClient, bib_id: str, holdings_id: str, use_cache: bool
 ) -> list[dict]:
-    """
-    Returns item data from Alma for the given bib_id and holdings_id.
+    """Returns item data from Alma for the given bib_id and holdings_id.
     The data is a list of dictionaries, each containing Alma data for one item.
     Retrieves data from cache file if requested (and if it exists);
     otherwise, retrieves data from Alma.
+
+    :param alma_client: AlmaAPIClient instance.
+    :param str bib_id: Bib ID (AKA MMS ID) for the target collection.
+    :param str holdings_id: Holdiings ID for the target collection.
+    :param bool use_cache: If True, get data from cache file, otherwise get it from Alma.
+    :return: A list of dictionaries representing Alma items.
     """
     alma_items = None
     alma_cache_file = f"alma_data_{holdings_id}.json"
@@ -219,10 +256,15 @@ def get_alma_items(
 def get_aspace_containers(
     aspace_client: ASnakeClient, resource_id: int, use_db: bool, use_cache: bool
 ) -> list[str]:
-    """
-    Given a set of top container ref URIs, obtain the full container data as JSON
+    """Given a set of top container ref URIs, obtain the full container data as JSON
     for each one that linked to a published resource.
     Returns a list of qualifying container data.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int resource_id: ASpace resource ID for target collection.
+    :param bool use_db: If True, get ASpace data from DB, otherwise get it via the API.
+    :param bool use_cache: If True, get data from cache file, otherwise get it from Alma.
+    :return: A list of containers linked to published resources.
     """
     containers = None
     aspace_cache_file = f"aspace_data_{resource_id}.json"
@@ -247,13 +289,19 @@ def get_aspace_containers(
 
 
 def write_json_to_file(data: list[dict], filename: str) -> None:
+    """Utility function for writing cache files.
+
+    :param list[dict] data: A list of dicts to write to a file.
+    :param str filename: Filename for output file.
+    """
     with open(filename, "w") as f:
         json.dump(data, f, indent=2)
 
 
 def print_unhandled_data(unhandled_data: dict) -> None:
-    """
-    Formats the unhandled data dictionary and prints it to the console.
+    """Formats the unhandled data dictionary and prints it to the console.
+
+    :param dict unhandled_data: A dict representing an item of unhandled data.
     """
     # get descriptions of unmatched alma items, and sort them
     unmatched_alma_items = unhandled_data.get("unmatched_alma_items")
@@ -323,9 +371,14 @@ def print_summary_info(
     unhandled_data: dict,
     print_output: bool,
 ) -> None:
-    """
-    Writes summary information about the run to the log.
+    """Writes summary information about the run to the log.
     If print_output is True, also prints the info to console.
+
+    :param list[dict] alma_items: A list of all Alma items.
+    :param list[dict] aspace_containers: A list of all ASpace containers.
+    :param list[dict] matched_aspace_containers: A list of matched ASpace containers.
+    :param dict unhandled_data: A dict representing unhandled items.
+    :param bool print_output: If True, print summary to console, otherwise only write to file.
     """
     summary_info = [
         f"Total Alma items: {len(alma_items)}",
@@ -352,7 +405,65 @@ def print_summary_info(
             print(message)
 
 
+def _remove_barcodes_from_aspace(
+    aspace_client: ASnakeClient, resource_id: int, dry_run: bool
+) -> None:
+    """Removes barcodes in ASpace from top containers related to the provided resource ID.
+
+    :param aspace_client: ASnakeClient instance for ASpace environment.
+    :param resource_id: The target resource ID in ASpace.
+    :param dry_run: If True, run in dry run mode, otherwise run live.
+    """
+
+    print("Retrieving container information from ASpace...")
+    container_refs = _get_container_refs_from_api(aspace_client, resource_id)
+    aspace_containers = _get_containers_from_container_refs(
+        aspace_client, container_refs
+    )
+    # Make sure returned containers have barcodes
+    top_containers_with_barcodes = [tc for tc in aspace_containers if tc.get("barcode")]
+
+    if not top_containers_with_barcodes:
+        print(f"No top containers with barcodes found for Resource ID {resource_id}")
+        return
+
+    confirmation = input(
+        f"Are you sure you want to remove {len(top_containers_with_barcodes)} "
+        f"barcodes for Resource ID {resource_id} in ArchivesSpace?"
+        " (y/N): "
+    )
+
+    if confirmation and confirmation.lower() in "yes":
+        print(f"Undoing barcoding for ASpace Resource ID {resource_id}...")
+        if dry_run:
+            message = (
+                "Running in dry run mode..."
+                f"would remove barcodes from {len(top_containers_with_barcodes)} top containers "
+                "in live mode"
+            )
+            logger.info(message)
+            print(message)
+            return
+        # Delete barcodes using fetches container refs
+        for tc in top_containers_with_barcodes:
+            del tc["barcode"]
+            aspace_client.post(tc["uri"], json=tc)
+            logger.info(f"Deleted barcode for top container {tc['uri']}")
+
+        message = (
+            f"Removed barcodes from {len(top_containers_with_barcodes)} "
+            f"top containers related to ASpace Resource ID {resource_id}"
+        )
+        logger.info(message)
+        print(message)
+        return
+    else:
+        print("Aborting undo...")
+        return
+
+
 def main() -> None:
+    """Add barcodes pulled from Alma records to matching records in ArchivesSpace."""
     # For convenience while debugging, print log name without full container path.
     # Also used in names of some output files.
     logging_filename_base = Path(logging.handler.baseFilename).stem
@@ -361,6 +472,10 @@ def main() -> None:
     args: argparse.Namespace = _get_args()
     alma_client = AlmaAPIClient(_get_alma_api_key(config_file=args.config_file))
     aspace_client = ASnakeClient(config_file=args.config_file)
+
+    if args.undo_barcoding:
+        _remove_barcodes_from_aspace(aspace_client, args.resource_id, args.dry_run)
+        return
 
     alma_items = get_alma_items(
         alma_client, args.bib_id, args.holdings_id, args.use_cache
