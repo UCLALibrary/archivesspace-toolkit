@@ -214,7 +214,7 @@ The Airtable data provided by LSC can be extended with counts of the containers 
 
 The script accepts two arguments:
 1. `--file_name`: path to the CSV export of LSC's Airtable data
-2. `--config_file`: path to the YAML configuration file, which includes database credentials for the target ArchivesSpace 
+2. `--config_file`: path to the YAML configuration file, which includes database credentials for the target ArchivesSpace instance
 
 With a `bash` session open in the `python` container, run `python get_container_counts.py --file_name {{PATH_TO_LSC_DATA}} --config_file {{PATH_TO_CONFIG_YAML}}`.
 
