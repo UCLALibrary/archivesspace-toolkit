@@ -218,6 +218,19 @@ The script accepts two arguments:
 
 With a `bash` session open in the `python` container, run `python get_container_counts.py --file_name {{PATH_TO_LSC_DATA}} --config_file {{PATH_TO_CONFIG_YAML}}`.
 
+### Undoing barcoding
+
+The `add_alma_barcodes_to_archivesspace.py` script includes a utility which can remove barcodes that have been applied to a collection in ArchivesSpace. The utility uses a log file from a previous barcoding process to target only those containers which had barcodes applied to them. Alternatively, the utility can delete barcodes from *all* of a resource's containers; this should of course be used sparingly and with caution.
+
+To "undo" barcodes recorded in a log file, use the following CLI flags as additional arguments for a typical command, as described above under *Example Usage*:
+
+1. `--undo_barcoding`: activates the utility
+2. `--use_log` {LOG_FILENAME}: provides the filename for the relevant log file, which should include event messages in the format "Added barcode to top container {TOP_CONTAINER_REF}"
+
+Note that `--use_log` cannot be used without `--undo_barcoding`. However, if `--undo_barcoding` is used without `--use_log`, the utility will prompt twice for confirmation before deleting all barcodes related to the provided `resource_id`.
+
+The utility also accepts the `--dry_run` flag, for mock usage before running it live.
+
 ## Rebuilding Solr Index
 
 TBD - all I know for now is this is a long-running process (14 hours so far....)
