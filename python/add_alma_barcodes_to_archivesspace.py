@@ -74,6 +74,10 @@ def _get_args() -> argparse.Namespace:
         help="Remove barcodes from ASpace for the collection specified by resource_id",
         action="store_true",
     )
+    parser.add_argument(
+        "--use_log",
+        help="Log file to use when undoing barcoding",
+    )
     args = parser.parse_args()
     return args
 
@@ -405,6 +409,30 @@ def print_summary_info(
             print(message)
 
 
+def _get_container_refs_from_log_file(filename: str) -> set[str]:
+    """Parses a log file and returns refs for containers that had barcodes added to them.
+
+    :param filename: Filename of cache file with ASpace data.
+    :return: A set of ASpace top container refs.
+    """
+
+    log_file = Path(filename)
+    if not log_file.exists():
+        print(f"{filename} does not exist. Exiting...")
+        raise SystemExit()
+
+    container_refs = []
+    with open(log_file, "r") as f:
+        for line in f:
+            log_item = json.loads(line)
+            event = log_item.get("event")
+            if event and event.startswith("Added barcode to top container"):
+                # parse top container ref from log event
+                ref = event.split("Added barcode to top container").pop().strip()
+                container_refs.append(ref)
+    return set(container_refs)
+
+
 def _remove_barcodes_from_aspace(
     aspace_client: ASnakeClient, args: argparse.Namespace
 ) -> None:
@@ -414,13 +442,20 @@ def _remove_barcodes_from_aspace(
     :param argparse.Namespace: CLI arguments for this program.
     """
 
-    print("Retrieving container information from ASpace...")
-    aspace_containers = get_aspace_containers(
-        aspace_client=aspace_client,
-        resource_id=args.resource_id,
-        use_db=args.use_db,
-        use_cache=args.use_cache,
-    )
+    if args.use_log:
+        container_refs = _get_container_refs_from_log_file(args.use_log)
+        print(f"Retrieving container information from {args.use_log}...")
+        aspace_containers = _get_containers_from_container_refs(
+            aspace_client, container_refs
+        )
+    else:
+        print("Retrieving container information from ASpace...")
+        aspace_containers = get_aspace_containers(
+            aspace_client=aspace_client,
+            resource_id=args.resource_id,
+            use_db=args.use_db,
+            use_cache=args.use_cache,
+        )
     # Make sure returned containers have barcodes
     top_containers_with_barcodes = [tc for tc in aspace_containers if tc.get("barcode")]
 
@@ -437,7 +472,21 @@ def _remove_barcodes_from_aspace(
     )
 
     if confirmation and confirmation.lower() in "yes":
-        print(f"Undoing barcoding for ASpace Resource ID {args.resource_id}...")
+        # Extra confirmation step if log is not used
+        if not args.use_log:
+            delete_all_warning = input(
+                "WARNING! You are about to delete all barcodes"
+                f" for the containers related to Resource ID {args.resource_id}."
+                " Re-enter the Resource ID to proceed: "
+            )
+            # Return if extra confirmation is undefined or does not match resource ID
+            if not delete_all_warning or not delete_all_warning.strip() == str(
+                args.resource_id
+            ):
+                print("Aborting undo...")
+                return
+
+        print(f"Removing barcodes for ASpace Resource ID {args.resource_id}...")
         if args.dry_run:
             message = (
                 "Running in dry run mode..."
@@ -449,9 +498,11 @@ def _remove_barcodes_from_aspace(
             return
         # Delete barcodes using fetched container refs
         for tc in top_containers_with_barcodes:
+            logger.info(
+                f"Deleted barcode {tc['barcode']} for top container {tc['uri']}"
+            )
             del tc["barcode"]
             aspace_client.post(tc["uri"], json=tc)
-            logger.info(f"Deleted barcode for top container {tc['uri']}")
 
         message = (
             f"Removed barcodes from {len(top_containers_with_barcodes)} "
@@ -476,6 +527,11 @@ def main() -> None:
     args: argparse.Namespace = _get_args()
     alma_client = AlmaAPIClient(_get_alma_api_key(config_file=args.config_file))
     aspace_client = ASnakeClient(config_file=args.config_file)
+
+    # Require use of --undo_barcoding if --use_log is set
+    if args.use_log and not args.undo_barcoding:
+        print("The --undo_barcoding is required when --use_log is set")
+        return
 
     if args.undo_barcoding:
         _remove_barcodes_from_aspace(aspace_client, args)
