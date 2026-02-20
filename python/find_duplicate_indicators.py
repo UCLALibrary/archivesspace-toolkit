@@ -131,13 +131,12 @@ def format_tc_uri_as_link(uri: str, base_url: str) -> str:
     # TC URIs look like /repositories/2/top_containers/123 -
     # We want the last two parts for the link (e.g. "top_containers/123")
     tc_path = "/".join(uri.split("/")[-2:])
-    # Base URL will end with a port (:1234) and possibly "/api", which needs to be removed
-    if base_url.endswith("/api"):
-        base_url = base_url[:-4]
-    if ":" in base_url:
-        base_url = base_url.split(":")[0]
-    full_url = f"{base_url}/{tc_path}"
-    return full_url
+    # Base URL mayl end with a port (e.g. :1234) and possibly "/api",
+    # so remove everything after the last colon if it's not followed by two slashes
+    port_split = base_url.rsplit(":", 1)
+    if len(port_split) == 2 and not port_split[1].startswith("//"):
+        base_url = port_split[0]
+    return f"{base_url}/{tc_path}"
 
 
 def main() -> None:
