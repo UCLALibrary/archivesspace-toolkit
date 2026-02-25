@@ -52,8 +52,9 @@ def get_all_collection_ids(aspace_client: ASnakeClient) -> list[str]:
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
     """
     collection_ids = []
-    for collection in aspace_client.get_paged("repositories/2/collections"):
-        collection_ids.append(collection["uri"])
+    for collection in aspace_client.get_paged("repositories/2/resources"):
+        # Get URI, e.g. /repositories/2/resources/123, and extract the numeric ID at the end
+        collection_ids.append(collection["uri"].split("/")[-1])
     return collection_ids
 
 
@@ -96,6 +97,26 @@ def get_indicator_and_type_from_container_uri(
     return tc_indicator, tc_type
 
 
+def get_locations_from_container_uri(
+    aspace_client: ASnakeClient, container_uri: str
+) -> list[str]:
+    """Given a container URI, returns a list of names for the locations linked to that container.
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param str container_uri: The URI of the container to retrieve.
+    """
+    container = aspace_client.get(container_uri).json()
+    locations_refs = container.get("container_locations", [])
+    full_locations = []
+    if locations_refs:
+        for loc in locations_refs:
+            if "ref" in loc:
+                location = aspace_client.get(loc["ref"]).json()
+                full_locations.append(location.get("title", "Unknown Location"))
+
+    return full_locations
+
+
 def write_duplicates_to_file(
     duplicates: list[dict], filename: str, base_url: str
 ) -> None:
@@ -115,7 +136,14 @@ def write_duplicates_to_file(
         item["tc_link"] = format_tc_uri_as_link(item["container_uri"], base_url)
 
     with open(filename, "w", newline="") as csvfile:
-        fieldnames = ["collection", "indicator", "type", "container_uri", "tc_link"]
+        fieldnames = [
+            "collection",
+            "indicator",
+            "type",
+            "container_uri",
+            "tc_link",
+            "locations",
+        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for item in duplicates:
@@ -193,12 +221,17 @@ def main() -> None:
                     f"in collection {collection_id} ({len(container_uri_list)} occurrences)"
                 )
                 for container_ref in container_uri_list:
+                    locations_refs = get_locations_from_container_uri(
+                        aspace_client, container_ref
+                    )
+
                     tcs_with_duplicates.append(
                         {
                             "collection": collection_name,
                             "indicator": tc_indicator,
                             "type": tc_type,
                             "container_uri": container_ref,
+                            "locations": locations_refs,
                         }
                     )
 
