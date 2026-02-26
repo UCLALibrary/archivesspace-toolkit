@@ -43,6 +43,18 @@ def _get_args() -> argparse.Namespace:
         help="AS collection ID to check for duplicates. "
         "If not provided, all collections will be checked.",
     )
+    parser.add_argument(
+        "--start_collection_id",
+        required=False,
+        help="AS collection ID to start checking from. Only collections with IDs greater than or equal "
+        "to this will be checked.",
+    )
+    parser.add_argument(
+        "--end_collection_id",
+        required=False,
+        help="AS collection ID to end checking at. Only collections with IDs less than or equal "
+        "to this will be checked.",
+    )
     return parser.parse_args()
 
 
@@ -177,11 +189,36 @@ def main() -> None:
         base_url = config.get("baseurl")
     aspace_client = ASnakeClient(config_file=args.config_file)
 
+    # Check that provided start, end, and specific collection IDs make sense together
+    if args.collection_id and (args.start_collection_id or args.end_collection_id):
+        logger.error(
+            "Cannot use --collection_id together with --start_collection_id or --end_collection_id."
+        )
+        return
+    elif args.start_collection_id and args.end_collection_id:
+        if args.start_collection_id > args.end_collection_id:
+            logger.error(
+                "start_collection_id must be less than or equal to end_collection_id."
+            )
+            return
+
     # Get collections to check
     if args.collection_id:
         collection_ids = [args.collection_id]
     else:
         collection_ids = get_all_collection_ids(aspace_client)
+        # If start_collection_id or end_collection_id provided, filter the list of IDs to check
+        if args.start_collection_id:
+            collection_ids = [
+                cid
+                for cid in collection_ids
+                if int(cid) >= int(args.start_collection_id)
+            ]
+
+        if args.end_collection_id:
+            collection_ids = [
+                cid for cid in collection_ids if int(cid) <= int(args.end_collection_id)
+            ]
 
     logger.info(f"Checking {len(collection_ids)} collections for duplicate indicators.")
 
