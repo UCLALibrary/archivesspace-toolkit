@@ -139,19 +139,28 @@ def write_duplicates_to_file(
     :param str filename: The name of the CSV file to write to.
     :param str base_url: The base URL of the ArchivesSpace instance, used to create links to TCs.
     """
-    # Sort by collection, then indicator, then type, then container URI for easier reading.
+    # Sort by collection, then type, then indicator, then container URI for easier reading.
+    # Make sure indicator sort is done numerically, not by string comparison
     duplicates.sort(
-        key=lambda x: (x["collection"], x["indicator"], x["type"], x["container_uri"])
+        key=lambda x: (
+            x["collection"],
+            x["type"],
+            int(x["indicator"]),
+            x["container_uri"],
+        )
     )
-    # Add a new column for the link to the TC in ArchivesSpace.
+
     for item in duplicates:
+        # Add a new column for the link to the TC in ArchivesSpace.
         item["tc_link"] = format_tc_uri_as_link(item["container_uri"], base_url)
+        # Concatenate location names into a single string for easier reading in the CSV.
+        item["locations"] = "; ".join(item["locations"])
 
     with open(filename, "w", newline="") as csvfile:
         fieldnames = [
             "collection",
-            "indicator",
             "type",
+            "indicator",
             "container_uri",
             "tc_link",
             "locations",
@@ -271,14 +280,31 @@ def main() -> None:
                             "locations": locations_refs,
                         }
                     )
-
+    # If any duplicates found, write to file. Otherwise log that no duplicates found.
+    # Construct a filename based on collection ID(s) included in the report.
     if tcs_with_duplicates:
         if args.collection_id:
             output_filename = (
                 f"duplicate_indicators_collection_{args.collection_id}.csv"
             )
+        elif args.start_collection_id and args.end_collection_id:
+            output_filename = (
+                f"duplicate_indicators_collections_{args.start_collection_id}_to_"
+                f"{args.end_collection_id}.csv"
+            )
+        elif args.start_collection_id:
+            output_filename = (
+                "duplicate_indicators_collections_"
+                + f"{args.start_collection_id}_and_up.csv"
+            )
+
+        elif args.end_collection_id:
+            output_filename = (
+                f"duplicate_indicators_collections_up_to_{args.end_collection_id}.csv"
+            )
         else:
             output_filename = "duplicate_indicators_all_collections.csv"
+
         write_duplicates_to_file(tcs_with_duplicates, output_filename, base_url)
         logger.info(f"Duplicate indicators written to {output_filename}")
     else:
