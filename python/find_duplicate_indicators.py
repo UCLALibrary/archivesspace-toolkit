@@ -40,14 +40,14 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument(
         "--collection_id",
         required=False,
-        help="AS collection ID to check for duplicates. "
-        "If not provided, all collections will be checked.",
+        help="AS collection ID to check for duplicates. If not provided, all eligible collections "
+        "will be checked. Do not use with --start_collection_id or --end_collection_id.",
     )
     parser.add_argument(
         "--start_collection_id",
         required=False,
-        help="AS collection ID to start checking from. Only collections with IDs greater than or equal "
-        "to this will be checked.",
+        help="AS collection ID to start checking from. Only collections with IDs greater "
+        "than or equal to this will be checked.",
     )
     parser.add_argument(
         "--end_collection_id",
