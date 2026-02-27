@@ -13,6 +13,10 @@
 					"settings": {
 							"editor.formatOnSave": true,
 							"python.analysis.typeCheckingMode": "standard",
+							"python.analysis.diagnosticSeverityOverrides": {
+								// Downgrade errors for ASnakeClient .get() requests
+								"reportAttributeAccessIssue": "information"
+							},
 							"python.editor.defaultFormatter": "ms-python.black-formatter",
 					"flake8.args": [
 									"--max-line-length=100",

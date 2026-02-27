@@ -198,7 +198,11 @@ def main() -> None:
         base_url = config.get("baseurl")
     aspace_client = ASnakeClient(config_file=args.config_file)
 
-    # Check that provided start, end, and specific collection IDs make sense together
+    # Check that provided start, end, and specific collection IDs make sense together.
+    # If collection_id is provided, we should not have start_collection_id or end_collection_id.
+    # If we have both start_collection_id and end_collection_id, check that
+    # start_collection_id <= end_collection_id.
+    # Providing only one of start_collection_id or end_collection_id is supported.
     if args.collection_id and (args.start_collection_id or args.end_collection_id):
         logger.error(
             "Cannot use --collection_id together with --start_collection_id or --end_collection_id."
@@ -233,14 +237,15 @@ def main() -> None:
 
     tcs_with_duplicates = []
     for collection_id in collection_ids:
-        collection_name = get_collection_title(aspace_client, collection_id)
+        collection_title = get_collection_title(aspace_client, collection_id)
         logger.info(
-            f"Checking collection {collection_name} (ID: {collection_id}) for duplicates."
+            f"Checking collection {collection_title} (ID: {collection_id}) for duplicates."
         )
         # Get all containers in the collection
         container_refs = get_containers_in_collection(aspace_client, collection_id)
         logger.info(
-            f"Found {len(container_refs)} containers in collection {collection_id}."
+            f"Found {len(container_refs)} containers in collection "
+            f"{collection_title} (ID: {collection_id})."
         )
         indicator_type_pairs_seen = {}
 
@@ -273,7 +278,7 @@ def main() -> None:
 
                     tcs_with_duplicates.append(
                         {
-                            "collection": collection_name,
+                            "collection": collection_title,
                             "indicator": tc_indicator,
                             "type": tc_type,
                             "container_uri": container_ref,
