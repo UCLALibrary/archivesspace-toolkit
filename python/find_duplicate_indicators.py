@@ -129,6 +129,27 @@ def get_locations_from_container_uri(
     return full_locations
 
 
+def get_linked_archival_objects_from_container_uri(
+    aspace_client: ASnakeClient, container_uri: str
+) -> list[str]:
+    """Given a container URI, returns a list of titles for the archival objects
+    linked to that container.
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param str container_uri: The URI of the container to retrieve.
+    """
+    container = aspace_client.get(container_uri).json()
+    ao_refs = container.get("series", [])
+    full_aos = []
+    if ao_refs:
+        for ao in ao_refs:
+            if "ref" in ao:
+                archival_object = aspace_client.get(ao["ref"]).json()
+                full_aos.append(archival_object.get("title", "Unknown Archival Object"))
+
+    return full_aos
+
+
 def write_duplicates_to_file(
     duplicates: list[dict], filename: str, base_url: str
 ) -> None:
@@ -253,6 +274,13 @@ def main() -> None:
         # Create a dictionary where the key is a tuple of (indicator, type)
         # and the value is a list of container URIs that have that indicator and type
         for container_ref in container_refs:
+            # Check whether this is a "backlog material" container that should be skipped
+            linked_aos = get_linked_archival_objects_from_container_uri(
+                aspace_client, container_ref
+            )
+            if any("backlog material" in ao.lower() for ao in linked_aos):
+                continue
+
             tc_indicator, tc_type = get_indicator_and_type_from_container_uri(
                 aspace_client, container_ref
             )
