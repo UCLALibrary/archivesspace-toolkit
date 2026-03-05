@@ -209,6 +209,29 @@ def format_tc_uri_as_link(uri: str, base_url: str) -> str:
     return f"{base_url}/{tc_path}"
 
 
+def remove_backlog_containers_from_list(
+    aspace_client: ASnakeClient, duplicates: list, logger: BoundLogger
+) -> list[dict]:
+    """Given a list of top containers, removes any that are linked to Archival Objects
+    with "backlog material" in the title.
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param list duplicates: A list of Top Container URIs to check.
+    :param BoundLogger logger: A logger instance for logging messages.
+    """
+    filtered_duplicates = []
+    for uri in duplicates:
+        linked_aos = get_linked_archival_objects_from_container_uri(aspace_client, uri)
+        if any("backlog material" in ao.lower() for ao in linked_aos):
+            # Log that this TC is being skipped due to backlog AO
+            logger.info(
+                f"Skipping container {uri} because it is linked to a backlog AO."
+            )
+        else:
+            filtered_duplicates.append(uri)
+    return filtered_duplicates
+
+
 def main() -> None:
     args = _get_args()
     logger = _get_logger()
@@ -274,13 +297,6 @@ def main() -> None:
         # Create a dictionary where the key is a tuple of (indicator, type)
         # and the value is a list of container URIs that have that indicator and type
         for container_ref in container_refs:
-            # Check whether this is a "backlog material" container that should be skipped
-            linked_aos = get_linked_archival_objects_from_container_uri(
-                aspace_client, container_ref
-            )
-            if any("backlog material" in ao.lower() for ao in linked_aos):
-                continue
-
             tc_indicator, tc_type = get_indicator_and_type_from_container_uri(
                 aspace_client, container_ref
             )
@@ -289,11 +305,21 @@ def main() -> None:
                 indicator_type_pairs_seen[key] = []
             indicator_type_pairs_seen[key].append(container_ref)
 
-        # After collecting all, find duplicates (i.e. keys with more than one container URI)
+        # Remove "backlog material" containers from all potential duplicates
+        for key, container_uri_list in indicator_type_pairs_seen.items():
+            if len(container_uri_list) > 1:
+                # Only check for backlog material if we have more than one container
+                # with the same indicator/type to avoid unnecessary API calls.
+                indicator_type_pairs_seen[key] = remove_backlog_containers_from_list(
+                    aspace_client, container_uri_list, logger
+                )
+
         for (
             tc_indicator,
             tc_type,
         ), container_uri_list in indicator_type_pairs_seen.items():
+            # If we still have more than one container after removing backlog containers,
+            # all of those are duplicates.
             if len(container_uri_list) > 1:
                 logger.warning(
                     f"Duplicate indicator found: {tc_type} {tc_indicator} "
