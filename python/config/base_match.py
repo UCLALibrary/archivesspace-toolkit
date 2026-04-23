@@ -5,7 +5,7 @@ def match_containers(
     alma_match_data: dict,
     aspace_match_data: dict,
     logger: Optional[Any] = None,
-) -> tuple[list[dict], dict[dict]]:
+) -> tuple[list[dict], dict[str, list[dict]]]:
     """
     Matches Alma items with ASpace top containers and adds barcodes to the matched top containers.
     Also returns lists of unmatched Alma items and ASpace top containers.
@@ -24,7 +24,7 @@ def match_containers(
     """
 
     # find matches by comparing keys in _match_data dictionaries
-    matched_aspace_containers = []
+    matched_aspace_containers: list[dict] = []
     for alma_key, alma_item in alma_match_data.items():
         if alma_key in aspace_match_data:
             tc = aspace_match_data[alma_key]
@@ -46,13 +46,15 @@ def match_containers(
     unmatched_alma_keys = alma_keys - aspace_keys
     unmatched_aspace_keys = aspace_keys - alma_keys
 
-    unmatched_alma_items = [alma_match_data[key] for key in unmatched_alma_keys]
-    unmatched_aspace_containers = [
+    unmatched_alma_items: list[dict] = [
+        alma_match_data[key] for key in unmatched_alma_keys
+    ]
+    unmatched_aspace_containers: list[dict] = [
         aspace_match_data[key] for key in unmatched_aspace_keys
     ]
 
     # assemble unhandled data dict
-    unhandled_data = {
+    unhandled_data: dict[str, list[dict]] = {
         "unmatched_alma_items": unmatched_alma_items,
         "unmatched_aspace_containers": unmatched_aspace_containers,
     }

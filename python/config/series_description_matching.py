@@ -11,21 +11,21 @@ def parse_aspace_indicator(tc_indicator_with_series: str) -> tuple[str, str]:
         parsed_indicators = re.findall(r"(\d+)(\w+)", tc_indicator_with_series)
         # if we have no matches or more than one match, indicator is not in the expected format
         if len(parsed_indicators) != 1:
-            return None, None
+            return "", ""
         (tc_indicator, tc_series) = parsed_indicators[0]
 
     # otherwise, format should be XYZ-123
     else:
         parsed_indicators = re.findall(r"(\w+)-(\d+)", tc_indicator_with_series)
         if len(parsed_indicators) != 1:
-            return None, None
+            return "", ""
         (tc_series, tc_indicator) = parsed_indicators[0]
     return tc_indicator, tc_series
 
 
 def get_aspace_match_data(
     aspace_containers: list, logger: Optional[Any] = None
-) -> tuple[dict[tuple, list[tuple]]]:
+) -> tuple[dict[tuple, dict], list[tuple]]:
     """Parses ASpace top container indicators into indicator and series and extracts the type.
     Returns a dictionary with the indicator, type, and series as keys, and a list of top
     containers with duplicate keys."""
@@ -83,7 +83,7 @@ def get_aspace_match_data(
 
 def get_alma_match_data(
     alma_items: list, logger: Optional[Any] = None
-) -> tuple[dict[tuple], list[tuple]]:
+) -> tuple[dict[tuple, dict], list[tuple]]:
     """Parses Alma item descriptions into container type, indicator, and series
     and normalizes the indicator by removing leading zeroes and trailing " RESTRICTED".
     Returns a dictionary with the normalized indicator, type, and series as keys, and
@@ -92,7 +92,7 @@ def get_alma_match_data(
     match_data = {}
     items_with_duplicate_keys = []
     for item in alma_items:
-        description = item.get("description")
+        description = item.get("description", "")
         # split description into series and container type/indicator (space and period delimited)
         # e.g. "ser.P box.0011" -> "P", "box", "0011"
         alma_series = description.split(" ")[0].split(".")[1]
