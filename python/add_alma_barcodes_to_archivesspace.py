@@ -25,9 +25,11 @@ def _get_logger(name: str | None = None) -> BoundLogger:
     if not name:
         # Use base filename of current script.
         name = Path(__file__).stem
+    logs_dir = Path("logs")  # save logs to "./logs/"
+    logs_dir.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logging_filename_base = f"{name}_{timestamp}"
-    logging_filename = f"{logging_filename_base}.log"
+    logging_filename = logs_dir / f"{logging_filename_base}.log"
     logging.setup_logging(filename=logging_filename, level="INFO")
     return logging.get_logger(name=name)
 
