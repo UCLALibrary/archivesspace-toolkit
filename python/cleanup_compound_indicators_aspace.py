@@ -9,7 +9,6 @@ from pathlib import Path
 from asnake.client import ASnakeClient
 
 from aspace_utils import (
-    _get_container_refs_from_api,
     _get_container_refs_from_db,
     _get_ao_refs_for_top_container_from_db,
 )
@@ -35,14 +34,17 @@ def _configure_logging() -> None:
 def _get_args() -> argparse.Namespace:
     """Get command-line arguments for this program."""
     parser = argparse.ArgumentParser(
-        description="Cleanup compound box indicators in ArchivesSpace."
+        description="Cleanup compound indicators in ArchivesSpace."
     )
     parser.add_argument(
         "-c",
         "--config_file",
         type=str,
         required=True,
-        help="Path to YAML config file with ArchivesSpace credentials.",
+        help=(
+            "Path to YAML config file with ArchivesSpace credentials, "
+            "including database connection settings."
+        ),
     )
     parser.add_argument(
         "--repo_id",
@@ -59,14 +61,9 @@ def _get_args() -> argparse.Namespace:
         help="ArchivesSpace resource ID to process.",
     )
     parser.add_argument(
-        "--use_db",
-        action="store_true",
-        help="Get containers from database instead of API.",
-    )
-    parser.add_argument(
         "--dry_run",
         action="store_true",
-        help="Dry run: log would-be actions without updating ArchivesSpace.",
+        help="Log intended actions without updating ArchivesSpace.",
     )
     return parser.parse_args()
 
@@ -130,16 +127,16 @@ def _parse_compound_indicator(indicator: str) -> list[str]:
 
 def _get_all_top_containers(
     aspace_client: ASnakeClient,
+    resource_uri: str,
     resource_id: int,
-    use_db: bool,
-    db_config: dict | None,
+    db_config: dict,
 ) -> tuple[list[dict], set[str], dict[str, list[dict]]]:
     """Fetch all top containers linked to the given resource.
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
-    :param int resource_id: ASpace resource ID for the target collection.
-    :param bool use_db: If True, fetch container refs via DB query; otherwise via API.
-    :param dict db_config: DB connection settings, required when use_db is True.
+    :param str resource_uri: The URI of the resource to process.
+    :param int resource_id: The ID of the resource to process.
+    :param dict db_config: DB connection settings.
     :return: A tuple of:
         - all_tcs: full dictionaries for every top container linked to the resource.
         - existing_indicators: set of all existing indicator strings for the resource.
@@ -147,15 +144,11 @@ def _get_all_top_containers(
         - tcs_by_indicator: dict with indicators as keys,
             and lists of TCs with that indicator as values, for duplicate checks.
     """
-    if use_db:
-        if not db_config:
-            raise ValueError("db_config is required when use_db is True")
-        container_refs = _get_container_refs_from_db(db_config, resource_id)
-    else:
-        container_refs = _get_container_refs_from_api(aspace_client, resource_id)
+    container_refs = _get_container_refs_from_db(db_config, resource_id)
 
     logger.info(
-        f"Fetched {len(container_refs)} container refs for resource {resource_id}"
+        f"Fetched {len(container_refs)} container ref{'s' if len(container_refs) > 1 else ''} "
+        f"from {resource_uri}"
     )
 
     all_tcs: list[dict] = []
@@ -202,54 +195,44 @@ def _post_top_container(
     :param dict tc_body: JSONModel body for the new top container.
     :param bool dry_run: If True, log the intended action without making the API call.
     """
-    if dry_run:
-        logger.info(
-            f"DRY RUN: Would create top container for "
-            f"{tc_body.get('type')} {tc_body.get('indicator')}"
-        )
-        return f"MOCK URI FOR {tc_body.get('type')} {tc_body.get('indicator')}"
-
-    response = aspace_client.post(
-        f"/repositories/{repo_id}/top_containers", json=tc_body
-    ).json()
-    if response.get("status") != "Created":
-        logger.error(f"Failed to create top container {tc_body}: {response}")
-        return None
-
-    new_uri = f"/repositories/{repo_id}/top_containers/{response['id']}"
-    logger.info(f"Created top container {new_uri}")
+    if not dry_run:
+        response = aspace_client.post(
+            f"/repositories/{repo_id}/top_containers", json=tc_body
+        ).json()
+        new_uri = f"/repositories/{repo_id}/top_containers/{response['id']}"
+    else:
+        new_uri = f"/repositories/{repo_id}/top_containers/{{NEW_TC_ID}}"
+    logger.info(
+        f"{'DRY RUN: Would create' if dry_run else 'Created'} new top container {new_uri}"
+    )
     return new_uri
 
 
-def _update_archival_object(
+def _post_archival_object(
     aspace_client: ASnakeClient,
     ao_ref: str,
-    original_tc_uri: str,
-    new_tc_uri: str,
+    ao_body: dict,
     dry_run: bool,
 ) -> None:
-    """Update an archival object to link to a new top container."""
-    archival_object = aspace_client.get(ao_ref).json()
-    instances = archival_object.get("instances", [])
-    for instance in instances:
-        sub_container = instance.get("sub_container", {})
-        top_container = sub_container.get("top_container", {})
-        if top_container.get("ref") == original_tc_uri:
-            top_container["ref"] = new_tc_uri
-            break
+    """POST an archival object to ArchivesSpace.
+
+    NOTE: The ASpace API uses POST to update archival objects,
+    not PUT or PATCH.
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param str ao_ref: The URI of the archival object to update.
+    :param dict ao_body: The body of the archival object.
+    :param bool dry_run: If True, log the intended updates without POSTing.
+    """
     if not dry_run:
-        response = aspace_client.post(ao_ref, json=archival_object).json()
-        if response.get("status") != "Updated":
-            logger.error(f"Failed to update archival object {ao_ref}: {response}")
-            return
+        response = aspace_client.post(ao_ref, json=ao_body).json()
     logger.info(
         f"{'DRY RUN: Would update' if dry_run else 'Updated'} "
-        f"top container ref on archival object {ao_ref} "
-        f"from {original_tc_uri} to {new_tc_uri}"
+        f"instance(s) on archival object {ao_ref}"
     )
 
 
-def _relink_and_cleanup_archival_objects(
+def _relink_archival_objects(
     aspace_client: ASnakeClient,
     original_tc: dict,
     new_tc_uris: list[str],
@@ -257,51 +240,86 @@ def _relink_and_cleanup_archival_objects(
     dry_run: bool,
 ) -> None:
     """Handles relinking archival objects from `original_tc`
-    to individual top containers (`new_tc_uris`).
+    to individual top containers `new_tc_uris`.
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
     :param dict original_tc: The compound top container record being replaced.
     :param list[str] new_tc_uris: URIs of individual top containers to link.
+    :param dict db_config: DB connection settings.
     :param bool dry_run: If True, log the intended updates without POSTing.
     """
-    # Get archival object instances linked to the compound top container.
+    # Parse ID from original TC URI,
+    # because it's much faster when querying the DB.
     original_tc_uri = original_tc.get("uri", "")
     original_tc_id = int(original_tc_uri.split("/")[-1])
 
+    # There is no good way to retrieve all AOs linked to a TC via the API,
+    # so we use a database query instead.
     ao_refs = _get_ao_refs_for_top_container_from_db(db_config, original_tc_id)
     logger.info(
-        f"Found {len(ao_refs)} archival objects linked to "
-        f"compound top container {original_tc_uri}"
+        f"Found {len(ao_refs)} archival object{'s' if len(ao_refs) > 1 else ''} "
+        f"linked to compound top container {original_tc_uri}"
     )
 
+    # For each AO linked to the original TC,
+    # relink it to each of the new, individual TCs.
     for ao_ref in ao_refs:
+        archival_object = aspace_client.get(ao_ref).json()
+
+        # Find the instance within the AO with ref to the original TC.
+        # The path of the ref is instance > sub_container > top_container > ref.
+        original_instances = archival_object.get("instances", [])
+        new_instances = []
+        instance_type = ""
+        for instance in original_instances:
+            sub_container = instance.get("sub_container", {})
+            top_container = sub_container.get("top_container", {})
+            if top_container.get("ref") == original_tc_uri:
+                # Preserve instance type from original instance.
+                instance_type = instance.get("instance_type", "")
+
+        # Add new instances to the AO with ref to each of the new, individual TCs,
+        # with instance type preserved from original instance.
         for new_tc_uri in new_tc_uris:
-            _update_archival_object(
-                aspace_client, ao_ref, original_tc_uri, new_tc_uri, dry_run
+            new_instances.append(
+                {
+                    "instance_type": instance_type,
+                    "sub_container": {"top_container": {"ref": new_tc_uri}},
+                }
             )
+            logger.info(
+                f"Relinked archival object {ao_ref} to top container {new_tc_uri}"
+            )
+
+        # If the instances have changed, POST the updated AO to ArchivesSpace,
+        # or log the intended update if dry_run.
+        if original_instances != new_instances:
+            archival_object["instances"] = new_instances
+            _post_archival_object(aspace_client, ao_ref, archival_object, dry_run)
 
 
 def _delete_top_container(
     aspace_client: ASnakeClient, tc_uri: str, dry_run: bool
 ) -> None:
-    """Delete the given top container URI."""
-    if dry_run:
-        logger.info(f"DRY RUN: Would delete compound top container {tc_uri}")
-        return
+    """Delete the given top container URI.
 
-    response = aspace_client.delete(tc_uri).json()
-    if response.get("status") != "Deleted":
-        logger.error(f"Failed to delete top container {tc_uri}: {response}")
-        return
-    logger.info(f"Deleted compound top container {tc_uri}")
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param str tc_uri: The URI of the top container to delete.
+    :param bool dry_run: If True, log the intended deletion without making the API call.
+    """
+    if not dry_run:
+        aspace_client.delete(tc_uri).json()
+    logger.info(
+        f"{'DRY RUN: Would delete' if dry_run else 'Deleted'} "
+        f"compound top container {tc_uri}"
+    )
 
 
 def _process_resource(
     aspace_client: ASnakeClient,
     repo_id: int,
     resource_id: int,
-    use_db: bool,
-    db_config: dict | None,
+    db_config: dict,
     dry_run: bool,
 ) -> None:
     """Cleanup compound box indicators for the given resource.
@@ -309,17 +327,17 @@ def _process_resource(
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
     :param int repo_id: Target ASpace repository ID.
     :param int resource_id: ASpace resource ID for the target collection.
-    :param bool use_db: If True, fetch container refs via DB query, otherwise via API,
-        which may timeout if the resource has many top containers.
-    :param dict db_config: DB connection settings, required when use_db is True.
+    :param dict db_config: DB connection settings.
     :param bool dry_run: If True, log all intended changes without making API writes.
     """
     if dry_run:
         logger.info(f"DRY RUN--NO UPDATES WILL BE MADE")
-    logger.info(f"Processing resource {resource_id}")
+
+    resource_uri = f"/repositories/{repo_id}/resources/{resource_id}"
+    logger.info(f"Processing resource at {resource_uri}")
 
     all_tcs, existing_indicators, tcs_by_indicator = _get_all_top_containers(
-        aspace_client, resource_id, use_db, db_config
+        aspace_client, resource_uri, resource_id, db_config
     )
 
     compound_tcs = [
@@ -331,8 +349,8 @@ def _process_resource(
         )  # check for comma or hyphen in indicator
     ]
     logger.info(
-        f"Found {len(compound_tcs)} top containers "
-        f"with compound indicators in resource {resource_id}"
+        f"Found {len(compound_tcs)} top container{'s' if len(compound_tcs) > 1 else ''} "
+        f"with compound indicators at {resource_uri}"
     )
 
     for compound_tc in compound_tcs:
@@ -397,7 +415,7 @@ def _process_resource(
                     continue
         # Use list of reused or new top containers to relink archival objects
         # then delete the original compound top container.
-        _relink_and_cleanup_archival_objects(
+        _relink_archival_objects(
             aspace_client, compound_tc, individual_uris, db_config, dry_run
         )
         _delete_top_container(aspace_client, compound_uri, dry_run)
@@ -422,13 +440,14 @@ def main() -> None:
     args = _get_args()
 
     aspace_client = ASnakeClient(config_file=args.config_file)
-    db_config = aspace_client.config.get("database") if args.use_db else None
+    db_config = aspace_client.config.get("database")
+    if not db_config:
+        raise ValueError("DB connection settings are required.")
 
     _process_resource(
         aspace_client=aspace_client,
         repo_id=args.repo_id,
         resource_id=args.resource_id,
-        use_db=args.use_db,
         db_config=db_config,
         dry_run=args.dry_run,
     )
