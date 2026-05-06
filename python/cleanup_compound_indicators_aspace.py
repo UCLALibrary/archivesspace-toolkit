@@ -8,9 +8,10 @@ from datetime import datetime
 from pathlib import Path
 from asnake.client import ASnakeClient
 
-from add_alma_barcodes_to_archivesspace import (
+from aspace_utils import (
     _get_container_refs_from_api,
     _get_container_refs_from_db,
+    _get_ao_refs_for_top_container_from_db,
 )
 
 
@@ -220,25 +221,64 @@ def _post_top_container(
     return new_uri
 
 
-def _relink_and_cleanup_archival_objects(
+def _update_archival_object(
     aspace_client: ASnakeClient,
-    compound_tc: dict,
-    new_tc_uris: list[str],
+    ao_ref: str,
+    original_tc_uri: str,
+    new_tc_uri: str,
     dry_run: bool,
 ) -> None:
-    """Handles relinking archival objects from `compound_tc`
+    """Update an archival object to link to a new top container."""
+    archival_object = aspace_client.get(ao_ref).json()
+    instances = archival_object.get("instances", [])
+    for instance in instances:
+        sub_container = instance.get("sub_container", {})
+        top_container = sub_container.get("top_container", {})
+        if top_container.get("ref") == original_tc_uri:
+            top_container["ref"] = new_tc_uri
+            break
+    if not dry_run:
+        response = aspace_client.post(ao_ref, json=archival_object).json()
+        if response.get("status") != "Updated":
+            logger.error(f"Failed to update archival object {ao_ref}: {response}")
+            return
+    logger.info(
+        f"{'DRY RUN: Would update' if dry_run else 'Updated'} "
+        f"top container ref on archival object {ao_ref} "
+        f"from {original_tc_uri} to {new_tc_uri}"
+    )
+
+
+def _relink_and_cleanup_archival_objects(
+    aspace_client: ASnakeClient,
+    original_tc: dict,
+    new_tc_uris: list[str],
+    db_config: dict,
+    dry_run: bool,
+) -> None:
+    """Handles relinking archival objects from `original_tc`
     to individual top containers (`new_tc_uris`).
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
-    :param dict compound_tc: The compound top container record being replaced.
+    :param dict original_tc: The compound top container record being replaced.
     :param list[str] new_tc_uris: URIs of individual top containers to link.
     :param bool dry_run: If True, log the intended updates without POSTing.
     """
     # Get archival object instances linked to the compound top container.
-    compound_uri = compound_tc.get("uri")
-    # TODO: Figure out how to relink archival objects from the original compound container
-    # to the new individual containers.
-    pass
+    original_tc_uri = original_tc.get("uri", "")
+    original_tc_id = int(original_tc_uri.split("/")[-1])
+
+    ao_refs = _get_ao_refs_for_top_container_from_db(db_config, original_tc_id)
+    logger.info(
+        f"Found {len(ao_refs)} archival objects linked to "
+        f"compound top container {original_tc_uri}"
+    )
+
+    for ao_ref in ao_refs:
+        for new_tc_uri in new_tc_uris:
+            _update_archival_object(
+                aspace_client, ao_ref, original_tc_uri, new_tc_uri, dry_run
+            )
 
 
 def _delete_top_container(
@@ -358,7 +398,7 @@ def _process_resource(
         # Use list of reused or new top containers to relink archival objects
         # then delete the original compound top container.
         _relink_and_cleanup_archival_objects(
-            aspace_client, compound_tc, individual_uris, dry_run
+            aspace_client, compound_tc, individual_uris, db_config, dry_run
         )
         _delete_top_container(aspace_client, compound_uri, dry_run)
 
