@@ -153,9 +153,10 @@ def _get_all_top_containers(
 
     all_tcs: list[dict] = []
     for ref in container_refs:
-        tc = aspace_client.get(ref).json()
-        if "error" in tc:
-            logger.error(f"Error fetching top container {ref}: {tc['error']}")
+        try:
+            tc = aspace_client.get(ref).json()
+        except Exception as err:
+            logger.error(f"Error fetching top container {ref}: {err}. Skipping.")
             continue
         all_tcs.append(tc)
 
@@ -196,10 +197,14 @@ def _post_top_container(
     :param bool dry_run: If True, log the intended action without making the API call.
     """
     if not dry_run:
-        response = aspace_client.post(
-            f"/repositories/{repo_id}/top_containers", json=tc_body
-        ).json()
-        new_uri = f"/repositories/{repo_id}/top_containers/{response['id']}"
+        try:
+            response = aspace_client.post(
+                f"/repositories/{repo_id}/top_containers", json=tc_body
+            ).json()
+            new_uri = f"/repositories/{repo_id}/top_containers/{response['id']}"
+        except Exception as err:
+            logger.error(f"Error posting top container: {err}. Skipping.")
+            return None
     else:
         new_uri = f"/repositories/{repo_id}/top_containers/{{NEW_TC_ID}}"
     logger.info(
@@ -225,7 +230,11 @@ def _post_archival_object(
     :param bool dry_run: If True, log the intended updates without POSTing.
     """
     if not dry_run:
-        response = aspace_client.post(ao_ref, json=ao_body).json()
+        try:
+            aspace_client.post(ao_ref, json=ao_body).json()
+        except Exception as err:
+            logger.error(f"Error posting archival object: {err}. Skipping.")
+            return None
     logger.info(
         f"{'DRY RUN: Would update' if dry_run else 'Updated'} "
         f"instance(s) on archival object {ao_ref}"
@@ -264,7 +273,11 @@ def _relink_archival_objects(
     # For each AO linked to the original TC,
     # relink it to each of the new, individual TCs.
     for ao_ref in ao_refs:
-        archival_object = aspace_client.get(ao_ref).json()
+        try:
+            archival_object = aspace_client.get(ao_ref).json()
+        except Exception as err:
+            logger.error(f"Error fetching archival object {ao_ref}: {err}. Skipping.")
+            continue
 
         # Find the instance within the AO with ref to the original TC.
         # The path of the ref is instance > sub_container > top_container > ref.
@@ -308,7 +321,11 @@ def _delete_top_container(
     :param bool dry_run: If True, log the intended deletion without making the API call.
     """
     if not dry_run:
-        aspace_client.delete(tc_uri).json()
+        try:
+            aspace_client.delete(tc_uri).json()
+        except Exception as err:
+            logger.error(f"Error deleting top container {tc_uri}: {err}. Skipping.")
+            return None
     logger.info(
         f"{'DRY RUN: Would delete' if dry_run else 'Deleted'} "
         f"compound top container {tc_uri}"
