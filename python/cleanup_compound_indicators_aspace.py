@@ -84,7 +84,7 @@ def _expand_range(indicator: str) -> list[str]:
             raise ValueError(f"Start {start} > end {end}")
         return [f"{n}" for n in range(int(left), int(right) + 1)]
     # Anything else is not a valid numeric range.
-    raise ValueError(f"Not a valid numeric range")
+    raise ValueError("Not a valid numeric range")
 
 
 def _parse_compound_indicator(indicator: str) -> list[str]:
@@ -352,7 +352,7 @@ def _process_resource(
     :param bool dry_run: If True, log all intended changes without making API writes.
     """
     if dry_run:
-        logger.info(f"DRY RUN--NO UPDATES WILL BE MADE")
+        logger.info("DRY RUN--NO UPDATES WILL BE MADE")
 
     resource_uri = f"/repositories/{repo_id}/resources/{resource_id}"
     logger.info(f"Processing resource at {resource_uri}")

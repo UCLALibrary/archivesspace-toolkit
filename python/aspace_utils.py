@@ -89,7 +89,7 @@ def _get_ao_refs_for_top_container_from_db(
     # This adapts the query used in `_get_container_refs_from_db` to return
     # the set of archival object refs linked to the given top container.
     query = """
-        select distinct 
+        select distinct
             concat('/repositories/', r.repo_id, '/archival_objects/', ao.id) as ao_uri
         from resource r
         inner join archival_object ao on r.id = ao.root_record_id
