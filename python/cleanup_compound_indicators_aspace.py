@@ -97,17 +97,21 @@ def _parse_compound_indicator(indicator: str) -> list[str]:
 
     :param str indicator: The compound indicator to parse.
     :return: A flat list of individual indicator values.
+    :raises ValueError: If the indicator cannot be parsed safely.
     """
+    # Normalize "&" and " and " (case-insensitive) to commas.
+    cleaned_indicator = re.sub(r"&|\band\b", ",", indicator, flags=re.IGNORECASE)
     # Split on commas first to handle mixed cases, then expand any ranges in each part.
     parts = [
-        part.strip() for part in indicator.split(",") if part.strip()
+        part.strip() for part in cleaned_indicator.split(",") if part.strip()
     ]  # `if part.strip()` filters out any empty segments
 
     expanded: list[str] = []
     for part in parts:
-        if re.match(r"^\[?\d+-\d+\]?$", part):  # match 1-3 or [1-3]
-            # Remove any brackets from range.
-            part = part.strip("[]")
+        # Remove any square brackets
+        part = part.strip("[]")
+        # Match numeric ranges, e.g. 1-3
+        if re.match(r"^\d+-\d+$", part):
             try:
                 expanded_range = _expand_range(part)
                 expanded.extend(expanded_range)
@@ -357,13 +361,15 @@ def _process_resource(
         aspace_client, resource_uri, resource_id, db_config
     )
 
+    # Regex checks for commas, numeric ranges, "&", or " and " (case-insensitive)
+    compound_indicator_pattern = r",|\d+-\d+|&|\band\b"
     compound_tcs = [
         tc
         for tc in all_tcs
         if tc.get("type", "") == "box"
-        and any(
-            delimiter in tc.get("indicator", "") for delimiter in [",", "-"]
-        )  # check for comma or hyphen in indicator
+        and re.search(
+            compound_indicator_pattern, tc.get("indicator", ""), flags=re.IGNORECASE
+        )
     ]
     logger.info(
         f"Found {len(compound_tcs)} top container{'s' if len(compound_tcs) > 1 else ''} "

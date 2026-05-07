@@ -14,11 +14,16 @@ class TestParseCompoundIndicator(unittest.TestCase):
             ("38-42", ["38", "39", "40", "41", "42"]),
             ("1, 3, 3, 5-7", ["1", "3", "5", "6", "7"]),
             ("[1-3]", ["1", "2", "3"]),
+            ("[542-543, 554-556 & 762]", ["542", "543", "554", "555", "556", "762"]),
+            ("1 & 2, 3-5, 7 and 8", ["1", "2", "3", "4", "5", "7", "8"]),
+            ("[1, 3-5], [7-9]", ["1", "3", "4", "5", "7", "8", "9"]),
         ]
 
-        self.invalid_test_cases = [
-            ("38a-42a", ["38a-42a"]),
-            ("Foo-Bar", ["Foo-Bar"]),
+        # Only need inputs because we expect a ValueError to be raised
+        self.invalid_test_inputs = [
+            "38a-42a",
+            "Foo-Bar",
+            "3-5 and Oversize Box 8",
         ]
 
     def test_valid_compound_indicators(self):
@@ -27,7 +32,7 @@ class TestParseCompoundIndicator(unittest.TestCase):
                 self.assertEqual(_parse_compound_indicator(input), expected)
 
     def test_invalid_compound_indicators(self):
-        for input, _ in self.invalid_test_cases:
+        for input in self.invalid_test_inputs:
             with self.subTest(input=input):
                 # Invalid indicators should raise a ValueError.
                 self.assertRaises(ValueError, _parse_compound_indicator, input)
