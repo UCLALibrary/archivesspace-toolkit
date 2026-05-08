@@ -1,7 +1,7 @@
 """
 Utility functions and helpers for working with ArchivesSpace.
 
-This module provides utility functions for interacting with ArchivesSpace
+This module provides utilities for interacting with ArchivesSpace
 that can be reused across multiple scripts in the toolkit.
 """
 
@@ -10,8 +10,8 @@ from MySQLdb import connect
 from MySQLdb.cursors import DictCursor
 
 
-def _get_container_refs_from_api(
-    aspace_client: ASnakeClient, resource_id: int
+def get_container_refs_from_api(
+    aspace_client: ASnakeClient, repo_id: int, resource_id: int
 ) -> set[str]:
     """Returns a de-duped set of _ref_ top container URIs for the given resource_id,
     obtained via API call.
@@ -19,16 +19,17 @@ def _get_container_refs_from_api(
     more than a few thousand containers are associated with the resource.
 
     :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int repo_id: ASpace repository ID from which to retrieve containers.
     :param int resource_id: ASpace resource ID for target collection.
     :return: A set of container refs.
     """
-    url = f"/repositories/2/resources/{resource_id}/top_containers"
+    url = f"/repositories/{repo_id}/resources/{resource_id}/top_containers"
     container_refs = aspace_client.get(url).json()
     # Extract the ref URIs and de-dup.
     return set(tc["ref"] for tc in container_refs)
 
 
-def _get_container_refs_from_db(db_settings: dict, resource_id: int) -> set[str]:
+def get_container_refs_from_db(db_settings: dict, resource_id: int) -> set[str]:
     """Returns a de-duped set of _ref_ top container URIs for the given resource_id,
     obtained via database query.
     This is intended as an alternative for resources with more than a few thousand
@@ -68,7 +69,7 @@ def _get_container_refs_from_db(db_settings: dict, resource_id: int) -> set[str]
     return container_refs
 
 
-def _get_ao_refs_for_top_container_from_db(
+def get_ao_refs_for_top_container_from_db(
     db_settings: dict,
     top_container_id: int,
 ) -> list[str]:
