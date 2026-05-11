@@ -25,9 +25,11 @@ def _get_logger(name: str | None = None) -> BoundLogger:
     if not name:
         # Use base filename of current script.
         name = Path(__file__).stem
+    logs_dir = Path("logs")  # save logs to "./logs/"
+    logs_dir.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logging_filename_base = f"{name}_{timestamp}"
-    logging_filename = f"{logging_filename_base}.log"
+    logging_filename = logs_dir / f"{logging_filename_base}.log"
     logging.setup_logging(filename=logging_filename, level="INFO")
     return logging.get_logger(name=name)
 
@@ -107,7 +109,7 @@ def _get_alma_items_from_alma(
     offset = 0
     # get the total expected number of items
     total_items = alma_client.get_items(bib_id, holdings_id, {"limit": 1}).get(
-        "total_record_count"
+        "total_record_count", 0
     )
     while len(alma_items) < total_items:
         current_items = alma_client.get_items(
@@ -115,7 +117,7 @@ def _get_alma_items_from_alma(
         )
         offset += 100
         # keep only item_data from each item in the list
-        for item in current_items.get("item"):
+        for item in current_items.get("item", []):
             alma_items.append(item.get("item_data"))
     return alma_items
 
@@ -180,7 +182,7 @@ def _get_container_refs_from_db(db_settings: dict, resource_id: int) -> set[str]
 
 def _get_containers_from_container_refs(
     aspace_client: ASnakeClient, container_refs: set[str]
-) -> list[str]:
+) -> list[dict]:
     """Returns a list of container data, given a set of container refs.
 
     :param ASnakeClient aspace_client: ASnakeClient instance.
@@ -189,7 +191,7 @@ def _get_containers_from_container_refs(
     """
     containers = []
     for tc in container_refs:
-        tc_json = aspace_client.get(tc).json()
+        tc_json: dict = aspace_client.get(tc).json()
         # Check that the container is linked to a published resource.
         if not tc_json.get("is_linked_to_published_record"):
             logger.info(
@@ -201,7 +203,7 @@ def _get_containers_from_container_refs(
     return containers
 
 
-def _get_cached_data_from_file(filename: str) -> list[dict]:
+def _get_cached_data_from_file(filename: str) -> list[dict] | None:
     """Reads data from the given file and returns it.
     For this project, data will be list[dict], but this method does not enforce that.
 
@@ -259,7 +261,7 @@ def get_alma_items(
 
 def get_aspace_containers(
     aspace_client: ASnakeClient, resource_id: int, use_db: bool, use_cache: bool
-) -> list[str]:
+) -> list[dict]:
     """Given a set of top container ref URIs, obtain the full container data as JSON
     for each one that linked to a published resource.
     Returns a list of qualifying container data.
@@ -292,10 +294,10 @@ def get_aspace_containers(
     return containers
 
 
-def write_json_to_file(data: list[dict], filename: str) -> None:
+def write_json_to_file(data: dict, filename: str) -> None:
     """Utility function for writing cache files.
 
-    :param list[dict] data: A list of dicts to write to a file.
+    :param dict data: A dict to write to a file.
     :param str filename: Filename for output file.
     """
     with open(filename, "w") as f:
@@ -308,7 +310,7 @@ def print_unhandled_data(unhandled_data: dict) -> None:
     :param dict unhandled_data: A dict representing an item of unhandled data.
     """
     # get descriptions of unmatched alma items, and sort them
-    unmatched_alma_items = unhandled_data.get("unmatched_alma_items")
+    unmatched_alma_items = unhandled_data.get("unmatched_alma_items", [])
     unmatched_alma_items_desc = [
         f"{item.get('description')} ({item.get('barcode')})"
         for item in unmatched_alma_items
@@ -316,7 +318,7 @@ def print_unhandled_data(unhandled_data: dict) -> None:
     unmatched_alma_items_desc.sort()
 
     # get indicators of unmatched aspace top containers, and sort them
-    unmatched_aspace_containers = unhandled_data.get("unmatched_aspace_containers")
+    unmatched_aspace_containers = unhandled_data.get("unmatched_aspace_containers", [])
     # we'll want to sort the indicators as numbers, not strings
     # so add a sort key to the list of top containers
     # the sort key is the integer value of the indicator, or 0 if it's not a number
@@ -336,7 +338,9 @@ def print_unhandled_data(unhandled_data: dict) -> None:
     ]
 
     # get descriptions of top containers with existing barcodes, and sort them
-    top_containers_with_barcodes = unhandled_data.get("top_containers_with_barcodes")
+    top_containers_with_barcodes = unhandled_data.get(
+        "top_containers_with_barcodes", []
+    )
     top_containers_with_barcodes_desc = [
         f"{tc.get('type')} {tc.get('indicator')} ({tc.get('uri')})"
         for tc in top_containers_with_barcodes
@@ -344,11 +348,11 @@ def print_unhandled_data(unhandled_data: dict) -> None:
 
     # get descriptions of items with duplicate keys, and sort them
     # the format of these lists varies, so output all the data
-    items_with_duplicate_keys = unhandled_data.get("items_with_duplicate_keys")
+    items_with_duplicate_keys = unhandled_data.get("items_with_duplicate_keys", [])
 
     # get descriptions of top containers with duplicate keys, and sort them
     # the format of these lists varies, so output all the data
-    tcs_with_duplicate_keys = unhandled_data.get("tcs_with_duplicate_keys")
+    tcs_with_duplicate_keys = unhandled_data.get("tcs_with_duplicate_keys", [])
 
     # Print the data.
     print("Unhandled data:\n" "Unmatched Alma items:\n")
@@ -390,17 +394,20 @@ def print_summary_info(
         f"Matched ASpace top containers: {len(matched_aspace_containers)}",
         (
             f"ASpace top containers with existing barcodes:"
-            f" {len(unhandled_data.get('top_containers_with_barcodes'))}"
+            f" {len(unhandled_data.get('top_containers_with_barcodes', []))}"
         ),
-        f"Unmatched Alma items: {len(unhandled_data.get('unmatched_alma_items'))}",
+        f"Unmatched Alma items: {len(unhandled_data.get('unmatched_alma_items', []))}",
         (
             f"Unmatched ASpace top containers:"
-            f" {len(unhandled_data.get('unmatched_aspace_containers'))}"
+            f" {len(unhandled_data.get('unmatched_aspace_containers', []))}"
         ),
-        f"Alma items with duplicate keys: {len(unhandled_data.get('items_with_duplicate_keys'))}",
+        (
+            f"Alma items with duplicate keys:"
+            f" {len(unhandled_data.get('items_with_duplicate_keys', []))}"
+        ),
         (
             f"ASpace top containers with duplicate keys:"
-            f" {len(unhandled_data.get('tcs_with_duplicate_keys'))}"
+            f" {len(unhandled_data.get('tcs_with_duplicate_keys', []))}"
         ),
     ]
     for message in summary_info:

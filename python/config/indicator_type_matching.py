@@ -2,8 +2,8 @@ from typing import Optional, Any
 
 
 def get_aspace_match_data(
-    aspace_containers: list, logger: Optional[Any] = None
-) -> tuple[dict[tuple, list[tuple]]]:
+    aspace_containers: list[dict], logger: Optional[Any] = None
+) -> tuple[dict[tuple, dict], list[tuple]]:
     """Parses ASpace top container indicators and types into a dictionary."""
     match_data = {}
     tcs_with_duplicate_keys = []
@@ -31,14 +31,14 @@ def get_aspace_match_data(
 
 
 def get_alma_match_data(
-    alma_items: list, logger: Optional[Any] = None
-) -> tuple[dict[tuple], list[tuple]]:
+    alma_items: list[dict], logger: Optional[Any] = None
+) -> tuple[dict[tuple, dict], list[tuple]]:
     """Parses Alma item descriptions into container type and indicator,
     and normalizes the indicator by removing leading zeroes and " RESTRICTED"."""
     match_data = {}
     items_with_duplicate_keys = []
     for item in alma_items:
-        description = item.get("description")
+        description = item.get("description", "")
         # split description into container type and indicator, e.g. "box.1"
         alma_container_type = description.split(".")[0]
         alma_indicator = description.split(".")[1]
