@@ -1,5 +1,6 @@
 import argparse
 import csv
+from datetime import datetime
 
 from alma_api_client import AlmaAPIClient
 from asnake.client import ASnakeClient
@@ -61,8 +62,16 @@ def _get_args() -> argparse.Namespace:
         "-o",
         "--output_path",
         type=str,
-        required=True,
-        help="Path to write the CSV report.",
+        required=False,
+        default=(
+            f"reports/aspace_missing_containers_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            ".csv"
+        ),
+        help=(
+            "Path to write the CSV report. "
+            "Defaults to 'reports/aspace_missing_containers_<DATETIME>.csv'."
+        ),
     )
     return parser.parse_args()
 
@@ -199,6 +208,9 @@ def main() -> None:
     # Use the unmatched data to prepare the report rows
     _, unmatched_data = match_containers(alma_match_data, aspace_match_data)
     unmatched_alma_items = unmatched_data.get("unmatched_alma_items", [])
+    if not unmatched_alma_items:
+        print("No unmatched Alma items found. Exiting.")
+        return
     print(
         f"Found {len(unmatched_alma_items)} "
         f"Alma item{'s' if len(unmatched_alma_items) > 1 else ''} "
