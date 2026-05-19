@@ -2,6 +2,7 @@
 
 import asnake.logging as logging
 import csv
+import json
 import yaml
 from datetime import datetime
 from pathlib import Path
@@ -48,3 +49,38 @@ def write_dicts_to_csv(
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def read_from_cache(filename: str) -> list[dict] | None:
+    """Reads data from the given file and returns it.
+    Data is expected to be a list of dictionaries,
+    but this method does not enforce that.
+
+    :param str filename: Filename of cache file.
+    :return: A list of Alma items, or None if the cache file does not exist.
+    """
+    data_file = Path(filename)
+    if data_file.exists():
+        with open(data_file, "r") as f:
+            data = json.load(f)
+    else:
+        data = None
+    return data
+
+
+def write_to_cache(
+    data: dict | list[dict],
+    filename: str,
+    indent: int | None = None,
+) -> None:
+    """Stores data in the given file for possible later use.
+    Data is expected to be a dict or list of dicts,
+    but this method does not enforce that.
+
+    :param dict | list[dict] data: Data to write to the cache file.
+    :param str filename: Filename for cache file.
+    :param int indent: Number of spaces to indent the JSON data.
+        Defaults to None, which means no indentation.
+    """
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=indent)

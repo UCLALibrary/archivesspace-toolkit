@@ -8,7 +8,7 @@ from asnake.client import ASnakeClient
 import asnake.logging as logging
 
 from config.base_match import match_containers
-from utils import configure_logging, load_config
+from utils import configure_logging, load_config, read_from_cache, write_to_cache
 from utils.alma_utils import get_alma_items_from_alma
 from utils.aspace_utils import get_container_refs_from_api, get_container_refs_from_db
 
@@ -98,35 +98,6 @@ def _get_containers_from_container_refs(
     return containers
 
 
-def _get_cached_data_from_file(filename: str) -> list[dict] | None:
-    """Reads data from the given file and returns it.
-    For this project, data will be list[dict], but this method does not enforce that.
-
-    :param str filename: Filename of cache file.
-    :return: A list of Alma items.
-    """
-    data_file = Path(filename)
-    if data_file.exists():
-        logger.info(f"Reading alma data from {data_file}")
-        with open(data_file, "r") as f:
-            data = json.load(f)
-    else:
-        data = None
-    return data
-
-
-def _store_cached_data_in_file(data: list[dict], filename: str) -> None:
-    """Stores data in the given file for possible later use.
-    For this project, data will be list[dict], but this method does not enforce that.
-
-    :param list[dict] data: A list of Alma items.
-    :param str filename: Filename for cache file.
-    """
-    logger.info(f"Writing data to {filename}")
-    with open(filename, "w") as f:
-        json.dump(data, f)
-
-
 def get_alma_items(
     alma_client: AlmaAPIClient, bib_id: str, holdings_id: str, use_cache: bool
 ) -> list[dict]:
@@ -145,12 +116,14 @@ def get_alma_items(
     alma_cache_file = f"alma_data_{holdings_id}.json"
     # If using cache, get data from file if it exists.
     if use_cache:
-        alma_items = _get_cached_data_from_file(alma_cache_file)
+        logger.info(f"Reading Alma data from cache file {alma_cache_file}")
+        alma_items = read_from_cache(alma_cache_file)
     # If still no items, retrieve current data from Alma.
     if not alma_items:
         alma_items = get_alma_items_from_alma(alma_client, bib_id, holdings_id)
         # Cache data in file for possible later use.
-        _store_cached_data_in_file(alma_items, alma_cache_file)
+        logger.info(f"Caching Alma data in {alma_cache_file}")
+        write_to_cache(alma_items, alma_cache_file)
     return alma_items
 
 
@@ -176,7 +149,8 @@ def get_aspace_containers(
     aspace_cache_file = f"aspace_data_{resource_id}.json"
     # If using cache, get data from file if it exists.
     if use_cache:
-        containers = _get_cached_data_from_file(aspace_cache_file)
+        logger.info(f"Reading ASpace data from cache file {aspace_cache_file}")
+        containers = read_from_cache(aspace_cache_file)
     # If still no containers, retrieve current data from ASpace.
     if not containers:
         if use_db:
@@ -191,19 +165,10 @@ def get_aspace_containers(
         containers = _get_containers_from_container_refs(aspace_client, container_refs)
 
         # Cache data in file for possible later use.
-        _store_cached_data_in_file(containers, aspace_cache_file)
+        logger.info(f"Caching ASpace data in {aspace_cache_file}")
+        write_to_cache(containers, aspace_cache_file)
 
     return containers
-
-
-def write_json_to_file(data: dict, filename: str) -> None:
-    """Utility function for writing cache files.
-
-    :param dict data: A dict to write to a file.
-    :param str filename: Filename for output file.
-    """
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=2)
 
 
 def print_unhandled_data(unhandled_data: dict) -> None:
@@ -524,7 +489,7 @@ def main() -> None:
     # if there is any unhandled data, write it to a file
     if unhandled_data:
         unhandled_data_filename = f"unhandled_{logging_filename_base}.json"
-        write_json_to_file(unhandled_data, unhandled_data_filename)
+        write_to_cache(unhandled_data, unhandled_data_filename, indent=2)
         logger.info(
             f"Unhandled data (items and top containers remaining unmatched or with duplicate keys)"
             f" written to {unhandled_data_filename}"
