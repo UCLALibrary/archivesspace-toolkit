@@ -1,12 +1,11 @@
 import argparse
-import csv
 from datetime import datetime
 
 from alma_api_client import AlmaAPIClient
 from asnake.client import ASnakeClient
 from pathlib import Path
 
-from utils import load_config
+from utils import load_config, write_dicts_to_csv
 from utils.alma_utils import get_alma_items_from_alma
 from utils.aspace_utils import get_container_refs_from_db
 
@@ -99,31 +98,6 @@ def _get_all_top_containers_for_resource(
             continue
         all_tcs.append(tc)
     return all_tcs
-
-
-def _write_report_csv(
-    output_path: Path,
-    rows: list[dict],
-) -> None:
-    """Write the CSV report to the given output path.
-
-    :param Path output_path: Path to write the CSV report.
-    :param list[dict] rows: A list of CSV row dictionaries.
-    """
-    fieldnames = [
-        "ASpace Resource ID",
-        "Alma Bib ID",
-        "Alma Item Barcode",
-        "Alma Box Identifier",
-        "ASpace Match Found",
-        "Notes",
-    ]
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
 
 
 def _prepare_report_rows(
@@ -221,7 +195,7 @@ def main() -> None:
     print(f"Writing CSV report to {args.output_path}")
     rows = _prepare_report_rows(unmatched_alma_items, args.resource_id, args.bib_id)
     output_path = Path(args.output_path)
-    _write_report_csv(output_path, rows)
+    write_dicts_to_csv(output_path, rows)
 
 
 if __name__ == "__main__":
