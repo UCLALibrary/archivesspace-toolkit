@@ -1,37 +1,22 @@
 import argparse
 import json
-import yaml
-from datetime import datetime
+
 from importlib import import_module
 from pathlib import Path
 from alma_api_client import AlmaAPIClient
 from asnake.client import ASnakeClient
-from structlog.stdlib import BoundLogger  # for typehints
 import asnake.logging as logging
-from MySQLdb import connect
-from MySQLdb.cursors import DictCursor
+
 from config.base_match import match_containers
+from utils import configure_logging, load_config
+from utils.alma_utils import get_alma_items_from_alma
+from utils.aspace_utils import get_container_refs_from_api, get_container_refs_from_db
 
 
-def _get_logger(name: str | None = None) -> BoundLogger:
-    """Returns a logger for the current application. This is provided by
-    the asnake.logging package, which uses structlog.
-    A unique log filename is created using the current time, and log messages
-    will use the name in the 'logger' field.
-    If name not supplied, the name of the current script is used.
-
-    :param str name: Filename for the log. Defaults to None.
-    """
-    if not name:
-        # Use base filename of current script.
-        name = Path(__file__).stem
-    logs_dir = Path("logs")  # save logs to "./logs/"
-    logs_dir.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    logging_filename_base = f"{name}_{timestamp}"
-    logging_filename = logs_dir / f"{logging_filename_base}.log"
-    logging.setup_logging(filename=logging_filename, level="INFO")
-    return logging.get_logger(name=name)
+# Logger available globally within this module.
+# Configuration is done by configure_logging(), which is called by main().
+# Made available globally so that tests can use the same logger with their own configuration.
+logger = logging.get_logger(Path(__file__).stem)
 
 
 def _get_args() -> argparse.Namespace:
@@ -44,6 +29,12 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument("--holdings_id", help="Alma holdings MMS ID", required=True)
     parser.add_argument(
         "--resource_id", help="ArchivesSpace resource ID", required=True
+    )
+    parser.add_argument(
+        "--repo_id",
+        help="ArchivesSpace repository ID. Defaults to 2.",
+        required=False,
+        default=2,
     )
     parser.add_argument("--profile", help="Path to profile module", required=True)
     parser.add_argument(
@@ -82,102 +73,6 @@ def _get_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
     return args
-
-
-def _get_alma_api_key(config_file: str) -> str:
-    """Returns the Alma API key stored in the config file.
-
-    :param str config_file: YAML configuration file with connection details.
-    """
-    with open(config_file, "r") as f:
-        config = yaml.safe_load(f)
-    return config["alma_config"]["alma_api_key"]
-
-
-def _get_alma_items_from_alma(
-    alma_client: AlmaAPIClient, bib_id: str, holdings_id: str
-) -> list[dict]:
-    """Returns item data from Alma for the given bib_id and holdings_id.
-    The data is a list of dictionaries, each containing Alma data for one item.
-
-    :param alma_client: AlmaAPIClient instance.
-    :param str bib_id: Bib ID (AKA MMS ID) for the target collection.
-    :param str holdings_id: Holdiings ID for the target collection.
-    :return: A list of dictionaries representing Alma items.
-    """
-    alma_items = []
-    offset = 0
-    # get the total expected number of items
-    total_items = alma_client.get_items(bib_id, holdings_id, {"limit": 1}).get(
-        "total_record_count", 0
-    )
-    while len(alma_items) < total_items:
-        current_items = alma_client.get_items(
-            bib_id, holdings_id, {"limit": 100, "offset": offset}
-        )
-        offset += 100
-        # keep only item_data from each item in the list
-        for item in current_items.get("item", []):
-            alma_items.append(item.get("item_data"))
-    return alma_items
-
-
-def _get_container_refs_from_api(
-    aspace_client: ASnakeClient, resource_id: int
-) -> set[str]:
-    """Returns a de-duped set of _ref_ top container URIs for the given resource_id,
-    obtained via API call.
-    This API call can fail via timeout in hosted environments, when
-    more than a few thousand containers are associated with the resource.
-
-    :param ASnakeClient aspace_client: ASnakeClient instance.
-    :param int resource_id: ASpace resource ID for target collection.
-    :return: A set of container refs.
-    """
-    url = f"/repositories/2/resources/{resource_id}/top_containers"
-    container_refs = aspace_client.get(url).json()
-    # Extract the ref URIs and de-dup.
-    return set(tc["ref"] for tc in container_refs)
-
-
-def _get_container_refs_from_db(db_settings: dict, resource_id: int) -> set[str]:
-    """Returns a de-duped set of _ref_ top container URIs for the given resource_id,
-    obtained via database query.
-    This is intended as an alternative for resources with more than a few thousand
-    containers, as the API call may time out.
-
-    :param dict db_settings: A dict with DB connection details.
-    :param int resource_id: ASpace resource ID for target collection.
-    :return: A set of container refs.
-    """
-    mysql_client = connect(
-        host=db_settings.get("host"),
-        database=db_settings.get("database"),
-        user=db_settings.get("user"),
-        password=db_settings.get("password"),
-    )
-
-    query = """
-        select distinct
-            concat('/repositories/', r.repo_id, '/top_containers/', tc.id) as container_uri
-        from resource r
-        inner join archival_object ao on r.id = ao.root_record_id
-        inner join instance i on ao.id = i.archival_object_id
-        inner join sub_container sc on i.id = sc.instance_id
-        inner join top_container_link_rlshp tclr on sc.id = tclr.sub_container_id
-        inner join top_container tc on tclr.top_container_id = tc.id
-        where r.id = %s
-        and ao.publish = 1 -- true
-        and ao.suppressed = 0 -- false
-        order by container_uri
-    """
-    # Parameterized query requires tuple of values
-    cursor = mysql_client.cursor(DictCursor)
-    cursor.execute(query, (resource_id,))
-    container_refs = set(row["container_uri"] for row in cursor.fetchall())
-    cursor.close()
-    mysql_client.close()
-    return container_refs
 
 
 def _get_containers_from_container_refs(
@@ -253,20 +148,25 @@ def get_alma_items(
         alma_items = _get_cached_data_from_file(alma_cache_file)
     # If still no items, retrieve current data from Alma.
     if not alma_items:
-        alma_items = _get_alma_items_from_alma(alma_client, bib_id, holdings_id)
+        alma_items = get_alma_items_from_alma(alma_client, bib_id, holdings_id)
         # Cache data in file for possible later use.
         _store_cached_data_in_file(alma_items, alma_cache_file)
     return alma_items
 
 
 def get_aspace_containers(
-    aspace_client: ASnakeClient, resource_id: int, use_db: bool, use_cache: bool
+    aspace_client: ASnakeClient,
+    repo_id: int,
+    resource_id: int,
+    use_db: bool,
+    use_cache: bool,
 ) -> list[dict]:
     """Given a set of top container ref URIs, obtain the full container data as JSON
     for each one that linked to a published resource.
     Returns a list of qualifying container data.
 
     :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int repo_id: ASpace repository ID.
     :param int resource_id: ASpace resource ID for target collection.
     :param bool use_db: If True, get ASpace data from DB, otherwise get it via the API.
     :param bool use_cache: If True, get data from cache file, otherwise get it from Alma.
@@ -281,9 +181,11 @@ def get_aspace_containers(
     if not containers:
         if use_db:
             db_settings = aspace_client.config.get("database")
-            container_refs = _get_container_refs_from_db(db_settings, resource_id)
+            container_refs = get_container_refs_from_db(db_settings, resource_id)
         else:
-            container_refs = _get_container_refs_from_api(aspace_client, resource_id)
+            container_refs = get_container_refs_from_api(
+                aspace_client, repo_id, resource_id
+            )
 
         # The top containers endpoint returns refs, so we need to get the full container JSON.
         containers = _get_containers_from_container_refs(aspace_client, container_refs)
@@ -459,6 +361,7 @@ def _remove_barcodes_from_aspace(
         print("Retrieving container information from ASpace...")
         aspace_containers = get_aspace_containers(
             aspace_client=aspace_client,
+            repo_id=args.repo_id,
             resource_id=args.resource_id,
             use_db=args.use_db,
             use_cache=args.use_cache,
@@ -529,11 +432,15 @@ def main() -> None:
     # For convenience while debugging, print log name without full container path.
     # Also used in names of some output files.
     logging_filename_base = Path(logging.handler.baseFilename).stem
-    print(f"Logging to {logging_filename_base}.log")
+    print(f"Logging to logs/{logging_filename_base}.log")
+    configure_logging(log_filename_stem=logging_filename_base)
 
     args: argparse.Namespace = _get_args()
-    alma_client = AlmaAPIClient(_get_alma_api_key(config_file=args.config_file))
-    aspace_client = ASnakeClient(config_file=args.config_file)
+    config = load_config(args.config_file)
+    alma_api_key = config["alma_config"]["alma_api_key"]
+
+    alma_client = AlmaAPIClient(alma_api_key)
+    aspace_client = ASnakeClient(**config)
 
     # Require use of --undo_barcoding if --use_log is set
     if args.use_log and not args.undo_barcoding:
@@ -550,7 +457,7 @@ def main() -> None:
     logger.info(f"Found {len(alma_items)} items in Alma")
 
     aspace_containers = get_aspace_containers(
-        aspace_client, args.resource_id, args.use_db, args.use_cache
+        aspace_client, args.repo_id, args.resource_id, args.use_db, args.use_cache
     )
     logger.info(f"Found {len(aspace_containers)} top containers in ASpace")
 
@@ -625,7 +532,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # Defining logger here makes it available to all code in this module.
-    logger = _get_logger()
-    # Finally, do everything
     main()
