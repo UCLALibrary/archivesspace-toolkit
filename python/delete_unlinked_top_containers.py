@@ -2,18 +2,47 @@ import asnake.logging as logging
 from asnake.client import ASnakeClient
 import argparse
 
-logging.setup_logging(filename="archivessnake.log", level="INFO")
-# set label for custom logger - all output will be in archivessnake.log
-logger = logging.get_logger("delete_unlinked_top_containers")
+from pathlib import Path
+
+from utils import configure_logging
+
+# Logger available globally within this module.
+# Configuration is done by configure_logging(), which is called by main().
+# Made available globally so that tests can use the same logger with their own configuration.
+logger = logging.get_logger(Path(__file__).stem)
+
 client = ASnakeClient()
 
 
+def _get_args() -> argparse.Namespace:
+    """Returns the command-line arguments for this program.
+
+    :return: Parsed CLI arguments.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "container_list_file",
+        help="Path to a file containing a list of top container URIs to delete",
+    )
+    return parser.parse_args()
+
+
 def container_is_unlinked(top_container_uri: str) -> bool:
+    """Checks if a top container is unlinked by looking foran empty collection field.
+
+    :param str top_container_uri: The URI of the top container to check.
+    :return: True if the top container is unlinked, False otherwise.
+    """
     top_container = client.get(top_container_uri).json()
     return len(top_container["collection"]) == 0
 
 
 def container_has_errors(top_container_uri: str) -> bool:
+    """Checks if a top container has errors by looking for an error key in the response.
+
+    :param str top_container_uri: The URI of the top container to check.
+    :return: True if the top container has errors, False otherwise.
+    """
     top_container = client.get(top_container_uri).json()
     if "error" in top_container.keys():
         logger.error(
@@ -24,6 +53,10 @@ def container_has_errors(top_container_uri: str) -> bool:
 
 
 def delete_unlinked_top_containers(container_list_file: str):
+    """Deletes unlinked top containers from an ASpace repository.
+
+    :param str container_list_file: Path to file containing URIs of top containers to delete.
+    """
     logger.info(f"Reading top container URIs to delete from {container_list_file}")
     with open(container_list_file, "r") as f:
         container_list = f.readlines()
@@ -67,12 +100,12 @@ def delete_unlinked_top_containers(container_list_file: str):
     logger.info(f"Skipped {len(skipped_uri_list)} top containers: {skipped_uri_list}")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "container_list_file",
-        help="Path to a file containing a list of top container URIs to delete",
-    )
-    args = parser.parse_args()
-
+def main() -> None:
+    """Deletes unlinked top containers from an ASpace repository."""
+    configure_logging(Path(__file__).stem)
+    args = _get_args()
     delete_unlinked_top_containers(args.container_list_file)
+
+
+if __name__ == "__main__":
+    main()
