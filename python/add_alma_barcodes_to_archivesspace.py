@@ -396,7 +396,7 @@ def main() -> None:
 
     # For convenience while debugging, print log name without full container path.
     # Also used in names of some output files.
-    logging_filename_base = Path(logging.handler.baseFilename).stem
+    logging_filename_base = Path(__file__).stem
     print(f"Logging to {logging_filename_base}.log")
     configure_logging(log_filename_stem=logging_filename_base)
 
