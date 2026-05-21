@@ -86,6 +86,7 @@ def delete_unlinked_top_containers(
         if container_is_unlinked(client, container):
             if dry_run:
                 logger.info(f"DRY RUN: Would delete unlinked top container {container}")
+                deleted_count += 1
                 continue
             else:
                 logger.info(f"Deleting unlinked top container: {container}")
