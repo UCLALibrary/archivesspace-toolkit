@@ -1,4 +1,4 @@
-"""Generic logging setup helpers for reuse across scripts."""
+"""Generic utility functions for reuse across scripts."""
 
 import asnake.logging as logging
 import csv
@@ -57,7 +57,7 @@ def read_from_cache(filename: str) -> list[dict] | None:
     but this method does not enforce that.
 
     :param str filename: Filename of cache file.
-    :return: A list of Alma items, or None if the cache file does not exist.
+    :return: A list of dictionaries, or None if the cache file does not exist.
     """
     data_file = Path(filename)
     if data_file.exists():
