@@ -1,8 +1,10 @@
 from asnake.client import ASnakeClient
-from add_alma_barcodes_to_archivesspace import _get_container_refs_from_db
 import argparse
 import csv
 from pathlib import Path
+
+from utils import write_dicts_to_csv
+from utils.aspace_utils import get_container_refs_from_db
 
 
 def _get_args() -> argparse.Namespace:
@@ -48,10 +50,8 @@ def main() -> None:
                 try:
                     resource_id = int(row["ArchivesSpace Rec ID"])
                     # Counting container refs, rather than getting all container data
-                    container_refs = (
-                        _get_container_refs_from_db(  # imported from existing script
-                            db_settings, resource_id
-                        )
+                    container_refs = get_container_refs_from_db(
+                        db_settings, resource_id
                     )
                     row["container_count"] = len(container_refs)
                     rows_updated_with_counts += 1
@@ -69,11 +69,7 @@ def main() -> None:
 
     output_filename = Path(args.file_name).stem + "_with_container_counts.csv"
     print(f"Writing counts to {output_filename}...")
-    with open(output_filename, "w+", newline="", encoding="utf-8") as output_file:
-        fieldnames = data_with_counts[0].keys()
-        writer = csv.DictWriter(output_file, fieldnames)
-        writer.writeheader()
-        writer.writerows(data_with_counts)
+    write_dicts_to_csv(Path(output_filename), data_with_counts)
 
 
 if __name__ == "__main__":

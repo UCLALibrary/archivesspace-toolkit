@@ -1,30 +1,15 @@
 import argparse
-from datetime import datetime
-from pathlib import Path
-from asnake.client import ASnakeClient
-from structlog.stdlib import BoundLogger  # for typehints
 import asnake.logging as logging
-import csv
-import yaml
 
+from asnake.client import ASnakeClient
+from pathlib import Path
 
-def _get_logger(name: str | None = None) -> BoundLogger:
-    """Returns a logger for the current application. This is provided by
-    the asnake.logging package, which uses structlog.
-    A unique log filename is created using the current time, and log messages
-    will use the name in the 'logger' field.
-    If name not supplied, the name of the current script is used.
+from utils import configure_logging, load_config, write_dicts_to_csv
 
-    :param str name: Filename for the log. Defaults to None.
-    """
-    if not name:
-        # Use base filename of current script.
-        name = Path(__file__).stem
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    logging_filename_base = f"{name}_{timestamp}"
-    logging_filename = f"{logging_filename_base}.log"
-    logging.setup_logging(filename=logging_filename, level="INFO")
-    return logging.get_logger(name=name)
+# Logger available globally within this module.
+# Configuration is done by configure_logging(), which is called by main().
+# Made available globally so that tests can use the same logger with their own configuration.
+logger = logging.get_logger(Path(__file__).stem)
 
 
 def _get_args() -> argparse.Namespace:
@@ -177,19 +162,7 @@ def write_duplicates_to_file(
         # Concatenate location names into a single string for easier reading in the CSV.
         item["locations"] = "; ".join(item["locations"])
 
-    with open(filename, "w", newline="") as csvfile:
-        fieldnames = [
-            "collection",
-            "type",
-            "indicator",
-            "container_uri",
-            "tc_link",
-            "locations",
-        ]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in duplicates:
-            writer.writerow(item)
+    write_dicts_to_csv(Path(filename), duplicates)
 
 
 def format_tc_uri_as_link(uri: str, base_url: str) -> str:
@@ -210,14 +183,13 @@ def format_tc_uri_as_link(uri: str, base_url: str) -> str:
 
 
 def remove_backlog_containers_from_list(
-    aspace_client: ASnakeClient, duplicates: list, logger: BoundLogger
+    aspace_client: ASnakeClient, duplicates: list
 ) -> list[dict]:
     """Given a list of top containers, removes any that are linked to Archival Objects
     with "backlog material" in the title.
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
     :param list duplicates: A list of Top Container URIs to check.
-    :param BoundLogger logger: A logger instance for logging messages.
     """
     filtered_duplicates = []
     for uri in duplicates:
@@ -233,14 +205,13 @@ def remove_backlog_containers_from_list(
 
 
 def main() -> None:
+    configure_logging(Path(__file__).stem)
     args = _get_args()
-    logger = _get_logger()
 
     # Get URL info from config file, and initialize client
-    with open(args.config_file, "r") as f:
-        config = yaml.safe_load(f)
-        base_url = config.get("baseurl")
-    aspace_client = ASnakeClient(config_file=args.config_file)
+    config = load_config(args.config_file)
+    base_url = config.get("baseurl", "")
+    aspace_client = ASnakeClient(**config)
 
     # Check that provided start, end, and specific collection IDs make sense together.
     # If collection_id is provided, we should not have start_collection_id or end_collection_id.
@@ -311,7 +282,7 @@ def main() -> None:
                 # Only check for backlog material if we have more than one container
                 # with the same indicator/type to avoid unnecessary API calls.
                 indicator_type_pairs_seen[key] = remove_backlog_containers_from_list(
-                    aspace_client, container_uri_list, logger
+                    aspace_client, container_uri_list
                 )
 
         for (
