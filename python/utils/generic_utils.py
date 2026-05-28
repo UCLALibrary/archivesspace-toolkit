@@ -1,11 +1,24 @@
 """Generic utility functions for reuse across scripts."""
 
-import asnake.logging as logging
 import csv
 import json
 import yaml
+
+from asnake import logging
 from datetime import datetime
 from pathlib import Path
+
+
+def configure_console_logging() -> None:
+    """Configure ASnake logging to output to the console.
+
+    The ASnake logging module uses structlog,
+    which provides a console logger for development.
+    See docs @https://www.structlog.org/en/stable/console-output.html
+    """
+    processors = logging.default_structlog_conf()["processors"]
+    processors[-1] = logging.structlog.dev.ConsoleRenderer()
+    logging.structlog.configure(processors=processors)
 
 
 def configure_logging(log_filename_stem: str = "log") -> None:

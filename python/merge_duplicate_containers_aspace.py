@@ -1,11 +1,12 @@
 import argparse
+
+from asnake import logging
 from asnake.client import ASnakeClient
-from asnake.logging import get_logger
 from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
 
-from utils import configure_logging, load_config
+from utils import configure_logging, configure_console_logging, load_config
 from utils.aspace_utils import (
     get_container_refs_from_db,
     get_ao_refs_for_top_container_from_db,
@@ -14,7 +15,7 @@ from utils.aspace_utils import (
 # Logger available globally within this module.
 # Configuration is done by configure_logging(), which is called by main().
 # Made available globally so that tests can use the same logger with their own configuration.
-logger = get_logger(Path(__file__).stem)
+logger = logging.get_logger(Path(__file__).stem)
 
 
 def _get_args() -> argparse.Namespace:
@@ -69,17 +70,6 @@ def _get_tcs_by_indicator(
         indicator = tc.get("indicator", "")
         tcs_by_indicator[(type, indicator)].append(tc)
     return tcs_by_indicator
-
-
-def _count_ao_refs_for_tc(tc: dict, db_config: dict) -> int:
-    """Count the number of archival object references for a top container.
-
-    :param dict tc: Top container record.
-    :param dict db_config: DB connection settings.
-    :return: The number of archival object references for the top container.
-    """
-    tc_id = int(tc.get("uri", "0").split("/")[-1])
-    return len(get_ao_refs_for_top_container_from_db(db_config, tc_id))
 
 
 def _determine_canonical_tc(tcs: list[dict]) -> tuple[dict, list[dict]]:
@@ -183,8 +173,12 @@ def main() -> None:
     4. Relink archival objects to the canonical top container.
     5. Delete the duplicate top container(s).
     """
-    configure_logging(Path(__file__).stem)
     args = _get_args()
+    # Log dry run messages to console for better readability
+    if args.dry_run:
+        configure_console_logging()
+    else:
+        configure_logging(Path(__file__).stem)
     config = load_config(args.config_file)
     db_config = config.get("database")
     if not db_config:
