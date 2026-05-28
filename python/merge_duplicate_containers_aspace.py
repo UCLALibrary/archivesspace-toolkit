@@ -122,6 +122,15 @@ def _relink_archival_objects(
     for duplicate_tc in duplicate_tcs:
         for ao_ref in duplicate_tc["ao_refs"]:
             archival_object = aspace_client.get(ao_ref).json()
+            title = archival_object.get("title", "")
+            # If any archival object in the group contains "backlog" or "accession" in its title,
+            # log a message and skip merging the duplicate group.
+            if ["backlog", "accession"] in title.lower():
+                logger.info(
+                    f"Found archival object indicating new accession or accrual: {ao_ref}."
+                    "Manual review required."
+                )
+                return
             original_instances = archival_object.get("instances", [])
             if not original_instances:
                 continue
@@ -166,8 +175,12 @@ def _merge_duplicate_containers(
             f"with type '{type}' and indicator '{indicator}'"
         )
 
-        # Add temporary field to each TC to store list of archival objects refs
+        # Add temporary field to each TC to store list of archival objects refs,
+        # and log locations if dry run
         for tc in tcs:
+            locations = tc.get("container_locations", [])
+            if dry_run and locations:
+                logger.info(f"Top container {tc.get('uri')} has locations: {locations}")
             tc_id = int(tc.get("uri", "0").split("/")[-1])
             tc["ao_refs"] = get_ao_refs_for_top_container_from_db(db_config, tc_id)
 
