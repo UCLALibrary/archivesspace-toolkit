@@ -75,11 +75,26 @@ def _get_tcs_by_indicator(
 def _determine_canonical_tc(tcs: list[dict]) -> tuple[dict, list[dict]]:
     """Determine the canonical top container from a list of top container records.
 
+    Uses the record with the most `ao_refs`,
+    or the oldest `create_time` if there are ties.
+
     :param list[dict] tcs: List of top container records.
     :return: A tuple of the canonical top container and the remaining duplicate TCs.
     """
-    sorted_by_ao_count = sorted(tcs, key=lambda tc: len(tc["ao_refs"]), reverse=True)
-    return sorted_by_ao_count[0], sorted_by_ao_count[1:]
+    # Had help from LLM for this concise implementation.
+    # Selects the minimum value of the tuple returned by the lambda function,
+    # which is the TC with the most `ao_refs` (i.e. smallest negative value)
+    # or the oldest `create_time` if there are ties in the AO counts.
+    canonical = min(
+        tcs,
+        key=lambda tc: (
+            -len(tc["ao_refs"]),
+            # If missing `create_time`,
+            # treat as in future so it sorts after TC with create time
+            tc.get("create_time", "9999-01-01T00:00:00Z"),
+        ),
+    )
+    return canonical, [tc for tc in tcs if tc is not canonical]
 
 
 def _update_archival_object(
