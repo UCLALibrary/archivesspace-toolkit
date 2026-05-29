@@ -6,7 +6,6 @@ E.g. `from utils import configure_logging` vs `from utils.generic_utils import c
 
 from .generic_utils import (
     configure_logging,
-    configure_console_logging,
     load_config,
     write_dicts_to_csv,
     read_from_cache,
@@ -15,7 +14,6 @@ from .generic_utils import (
 
 __all__ = [
     "configure_logging",
-    "configure_console_logging",
     "load_config",
     "write_dicts_to_csv",
     "read_from_cache",

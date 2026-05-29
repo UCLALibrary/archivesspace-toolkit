@@ -89,8 +89,8 @@ def _determine_canonical_tc(tcs: list[dict]) -> tuple[dict, list[dict]]:
         tcs,
         key=lambda tc: (
             -len(tc["ao_refs"]),
-            # If missing `create_time`,
-            # treat as in future so it sorts after TC with create time
+            # If a TC is missing the `create_time` field,
+            # default to a future date so it sorts after TCs with a create time
             tc.get("create_time", "9999-01-01T00:00:00Z"),
         ),
     )

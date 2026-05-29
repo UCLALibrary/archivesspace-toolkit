@@ -9,29 +9,30 @@ from datetime import datetime
 from pathlib import Path
 
 
-def configure_console_logging() -> None:
-    """Configure ASnake logging to output to the console.
-
-    The ASnake logging module uses structlog,
-    which provides a console logger for development.
-    See docs @https://www.structlog.org/en/stable/console-output.html
-    """
-    processors = logging.default_structlog_conf()["processors"]
-    processors[-1] = logging.structlog.dev.ConsoleRenderer()
-    logging.structlog.configure(processors=processors)
-
-
-def configure_logging(log_filename_stem: str = "log") -> None:
+def configure_logging(
+    log_filename_stem: str = "log",
+    dry_run: bool = False,
+) -> None:
     """Configure ASnake logging using the provided log filename stem.
 
     :param str log_filename_stem: The filename stem to use for the configured log file.
         Defaults to "log".
+    :param bool dry_run: If True, write human-readable lines for review.
+        If False, use ASnake's default JSON line format. Defaults to False.
     """
     logs_dir = Path("logs")  # save logs to "./logs/"
     logs_dir.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = logs_dir / f"{log_filename_stem}_{timestamp}.log"
     logging.setup_logging(filename=log_filename, level="INFO")
+    if dry_run:
+        # The `asnake.logging` module uses `structlog`,
+        # which provides a pretty-print console logger called `ConsoleRenderer`.
+        # Using that here for a more human-readable format in dry run mode.
+        # See docs @https://www.structlog.org/en/stable/console-output.html
+        processors = logging.default_structlog_conf()["processors"]
+        processors[-1] = logging.structlog.dev.ConsoleRenderer(colors=False)
+        logging.structlog.configure(processors=processors)
 
 
 def load_config(config_file: str) -> dict:
