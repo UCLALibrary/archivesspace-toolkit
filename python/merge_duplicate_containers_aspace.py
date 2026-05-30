@@ -218,6 +218,7 @@ def _handle_duplicate_top_containers(
             )
 
             if original_ao != updated_ao:
+                print(updated_ao)
                 if dry_run:
                     logger.info(
                         f"DRY RUN: Would apply updates " f"to instance(s) on {ao_ref}"
@@ -266,7 +267,7 @@ def _merge_duplicate_containers(
         if len(tcs) > 1
     ]
     if not duplicate_groups:
-        logger.info("No duplicate top containers found for Resource ID {resource_id}.")
+        logger.info(f"No duplicate top containers found for Resource ID {resource_id}.")
         return
 
     for type, indicator, tcs in duplicate_groups:
