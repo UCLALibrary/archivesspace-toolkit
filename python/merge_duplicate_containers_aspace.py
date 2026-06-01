@@ -110,11 +110,12 @@ def _resolve_ao_refs_for_tcs(
     return tcs
 
 
-def _check_for_location_data(tcs: list[dict]) -> None:
+def _has_location_data(tcs: list[dict]) -> bool:
     """Check for location data on a list of top container records
     representing a duplicate group, flagging the group for review if found.
 
     :param list[dict] tcs: List of top container records representing a duplicate group.
+    :return: True if any top container has location data, False otherwise.
     """
     for tc in tcs:
         locations = tc.get("container_locations", [])
@@ -122,6 +123,8 @@ def _check_for_location_data(tcs: list[dict]) -> None:
             logger.warning(
                 f"Top container {tc.get('uri')} has location data: {locations}"
             )
+            return True
+    return False
 
 
 def _has_recent_accession_keywords(tcs: list[dict]) -> bool:
@@ -223,6 +226,40 @@ def _merge_top_containers(
     return True
 
 
+def _print_summary(summary: dict, dry_run: bool) -> None:
+    """Add summary info to the log and print a friendly message to the console.
+
+    :param dict summary: Dict containing summary info for the run.
+    :param bool dry_run: If True, print a dry run report.
+    """
+    if dry_run:
+        lines = [
+            f"{'*' * 5} DRY RUN SUMMARY {'*' * 5}",
+            f"Total duplicate groups: {summary['Total duplicate groups']}",
+            f"Groups with location data: {summary['Groups with location data']}",
+            (
+                f"Groups with recent accession keywords:"
+                f" {summary['Groups with recent accession keywords']}"
+            ),
+        ]
+    else:
+        lines = [
+            f"{'*' * 5} SUMMARY {'*' * 5}",
+            f"Total duplicate groups: {summary['Total duplicate groups']}",
+            f"Groups with location data: {summary['Groups with location data']}",
+            (
+                f"Groups with recent accession keywords:"
+                f" {summary['Groups with recent accession keywords']}"
+            ),
+            f"Successful merges: {summary['Successful merges']}",
+            f"Failed merges: {summary['Failed merges']}",
+        ]
+    lines.append(f"{'*' * len(lines[0])}")
+    for line in lines:
+        print(line)
+        logger.info(line)
+
+
 def _process_duplicates_in_collection(
     aspace_client: ASnakeClient,
     db_config: dict,
@@ -255,9 +292,10 @@ def _process_duplicates_in_collection(
 
     summary = {
         "Total duplicate groups": len(duplicate_groups),
+        "Groups with location data": 0,
+        "Groups with recent accession keywords": 0,
         "Successful merges": 0,
         "Failed merges": 0,
-        "Groups requiring manual review": 0,
     }
     for type, indicator, tcs in duplicate_groups:
         logger.info(
@@ -268,8 +306,9 @@ def _process_duplicates_in_collection(
         # Check for any location data in the duplicate group.
         # Per ticket, this should not stop processing,
         # but should be logged for visibility in dry run mode.
-        if dry_run:
-            _check_for_location_data(tcs)
+        if dry_run and _has_location_data(tcs):
+            summary["Groups with location data"] += 1
+            continue
 
         # Resolve AO refs to their full dictionaries
         # to make it easier to check AO titles for recent accession keywords
@@ -278,7 +317,7 @@ def _process_duplicates_in_collection(
         # Check for recent accession keywords in the titles of related archival objects
         # in the duplicate group, and stop processing the group if any are found.
         if _has_recent_accession_keywords(tcs):
-            summary["Groups requiring manual review"] += 1
+            summary["Groups with recent accession keywords"] += 1
             continue
 
         canonical_tc, duplicate_tcs = _determine_canonical_tc(tcs)
@@ -297,9 +336,7 @@ def _process_duplicates_in_collection(
             continue
         summary["Successful merges"] += 1
 
-    logger.info("Finished merging duplicate top containers")
-    for key, value in summary.items():
-        logger.info(f"{key}: {value}")
+    _print_summary(summary, dry_run)
 
 
 def main() -> None:
