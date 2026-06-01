@@ -2,6 +2,7 @@ import argparse
 
 from asnake import logging
 from asnake.client import ASnakeClient
+from asnake.jsonmodel import JM
 from collections import defaultdict
 from pathlib import Path
 
@@ -28,6 +29,13 @@ def _get_args() -> argparse.Namespace:
         type=str,
         required=True,
         help="Path to YAML config file with ArchivesSpace credentials.",
+    )
+    parser.add_argument(
+        "--repo_id",
+        type=int,
+        required=False,
+        default=2,
+        help="ArchivesSpace repository ID to target. Defaults to 2.",
     )
     parser.add_argument(
         "-r",
@@ -164,101 +172,76 @@ def _determine_canonical_tc(tcs: list[dict]) -> tuple[dict, list[dict]]:
     return canonical, [tc for tc in tcs if tc is not canonical]
 
 
-def _relink_archival_object_instances(
-    archival_object: dict,
-    source_tc_uri: str,
-    target_tc_uri: str,
-) -> dict:
-    """Relink archival object instances from source to target top container.
-
-    :param dict archival_object: The archival object dict to update.
-    :param str source_tc_uri: The URI of the source top container.
-    :param str target_tc_uri: The URI of the target top container.
-    :return: The updated archival object dict.
-    """
-    for instance in archival_object.get("instances", []):
-        sub_container = instance.get("sub_container", {})
-        top_container = sub_container.get("top_container", {})
-        if top_container.get("ref", "") == source_tc_uri:
-            instance["sub_container"]["top_container"]["ref"] = target_tc_uri
-    return archival_object
-
-
-def _handle_duplicate_top_containers(
+def _merge_top_containers(
     aspace_client: ASnakeClient,
     canonical_tc: dict,
     duplicate_tcs: list[dict],
+    repo_id: int,
     dry_run: bool,
-) -> None:
-    """Handle duplicate top containers by relinking related archival objects
-    to the canonical top container, then deleting the duplicate top containers.
+) -> bool:
+    """Merge duplicate top containers into the canonical top container
+    using the `/merge_requests/top_container` endpoint of the ArchivesSpace API.
+
+    NOTE: The ArchivesSpace API endpoint used in this function is sparsely documented here:
+    @https://archivesspace.github.io/archivesspace/api/?python#carry-out-a-merge-request-against-top-container-records
+    From manual testing, it appears to manage relinking of related archival objects
+    aggregating them all to point to the canonical top container,
+    then deleting the TCs identified in the request as duplicates (i.e. the `merge_candidates`).
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
-    :param dict canonical_tc: The canonical top container dict.
-    :param list[dict] duplicate_tcs: The duplicate top container dicts.
-    :param bool dry_run: If True, log the intended updates without updating.
+    :param dict canonical_tc: The canonical top container record.
+    :param list[dict] duplicate_tcs: The duplicate top container records.
+    :param int repo_id: The ArchivesSpace repository ID.
+    :param bool dry_run: If True, log the intended action without making the API call.
+    :return: True if the merge request is successful, False otherwise.
     """
-    for duplicate_tc in duplicate_tcs:
-        logger.info(f"Processing duplicate top container '{duplicate_tc['uri']}'...")
-        logger.info(
-            f"Found {len(duplicate_tc['_related_aos_temp'])} linked archival object(s)..."
-        )
+    # The `JM` helper class provides an easy way
+    # to construct json payload for the request.
+    request_body = JM.merge_requests(
+        uri="/merge_requests/top_container",
+        merge_destination={"ref": canonical_tc["uri"]},
+        merge_candidates=[{"ref": tc["uri"]} for tc in duplicate_tcs],
+    )
 
-        # Relink each archival object from duplicate to canonical top container
-        for original_ao in duplicate_tc["_related_aos_temp"]:
-            ao_ref = original_ao["uri"]
-            logger.info(
-                f"{'DRY RUN: Would relink' if dry_run else 'Relinking'} "
-                f"archival object '{original_ao['uri']}' "
-                f"from '{duplicate_tc['uri']}' to '{canonical_tc['uri']}'"
+    logger.info(
+        f"{'DRY RUN: Would merge' if dry_run else 'Merging'} "
+        f"duplicate top containers {[tc['uri'] for tc in duplicate_tcs]} "
+        f"into canonical top container '{canonical_tc['uri']}'"
+    )
+
+    if not dry_run:
+        try:
+            response = aspace_client.post(
+                "/merge_requests/top_container",
+                params={"repo_id": repo_id},
+                json=request_body,
             )
-
-            updated_ao = _relink_archival_object_instances(
-                original_ao, duplicate_tc["uri"], canonical_tc["uri"]
-            )
-
-            if original_ao != updated_ao:
-                print(updated_ao)
-                if dry_run:
-                    logger.info(
-                        f"DRY RUN: Would apply updates " f"to instance(s) on {ao_ref}"
-                    )
-                else:
-                    try:
-                        response = aspace_client.post(ao_ref, json=updated_ao)
-                        response.raise_for_status()
-                    except Exception as err:
-                        logger.error(
-                            f"Error updating archival object {ao_ref}: {err}. Skipping."
-                        )
-                        continue
-                    logger.info(f"Applied updates to instance(s) on {ao_ref}")
-
-        # Delete duplicate top container after relinking archival objects
-        if dry_run:
-            logger.info(
-                f"DRY RUN: Would delete duplicate top container '{duplicate_tc['uri']}'"
-            )
-        else:
-            try:
-                response = aspace_client.delete(duplicate_tc["uri"])
-                response.raise_for_status()
-            except Exception as err:
-                logger.error(
-                    f"Error deleting duplicate top container "
-                    f"{duplicate_tc['uri']}: {err}. Skipping."
-                )
-                continue
-            logger.info(f"Deleted duplicate top container '{duplicate_tc['uri']}'")
+            response.raise_for_status()
+        except Exception as err:
+            logger.error(f"Error merging duplicate top containers: {err}. Skipping.")
+            return False
+    return True
 
 
-def _merge_duplicate_containers(
+def _process_duplicates_in_collection(
     aspace_client: ASnakeClient,
     db_config: dict,
+    repo_id: int,
     resource_id: int,
     dry_run: bool,
 ) -> None:
-    """Merge duplicate top containers in ArchivesSpace."""
+    """Merge duplicate top containers in ArchivesSpace,
+    for a given collection (identified by `resource_id`).
+
+    Summary of LSC ticket:
+        1. Retrieve all top containers in the collection.
+        2. Identify duplicate groups by type and indicator.
+        3. For each group, designate a canonical top container,
+        based on criteria provided by LSC.
+        4. Merge the duplicate top containers into the canonical top container,
+        preserving archival object links in the process.
+        5. Delete the duplicate top container(s).
+    """
     tcs_by_indicator = _get_tcs_by_indicator(aspace_client, db_config, resource_id)
     # Find TC records that have duplicate (type, indicator) keys
     duplicate_groups: list[tuple[str, str, list[dict]]] = [
@@ -270,6 +253,12 @@ def _merge_duplicate_containers(
         logger.info(f"No duplicate top containers found for Resource ID {resource_id}.")
         return
 
+    summary = {
+        "Total duplicate groups": len(duplicate_groups),
+        "Successful merges": 0,
+        "Failed merges": 0,
+        "Groups requiring manual review": 0,
+    }
     for type, indicator, tcs in duplicate_groups:
         logger.info(
             f"Found {len(tcs)} top containers "
@@ -289,7 +278,8 @@ def _merge_duplicate_containers(
         # Check for recent accession keywords in the titles of related archival objects
         # in the duplicate group, and stop processing the group if any are found.
         if _has_recent_accession_keywords(tcs):
-            return
+            summary["Groups requiring manual review"] += 1
+            continue
 
         canonical_tc, duplicate_tcs = _determine_canonical_tc(tcs)
 
@@ -299,25 +289,21 @@ def _merge_duplicate_containers(
             f"{[tc['uri'] for tc in duplicate_tcs]}"
         )
 
-        _handle_duplicate_top_containers(
-            aspace_client, canonical_tc, duplicate_tcs, dry_run
+        success = _merge_top_containers(
+            aspace_client, canonical_tc, duplicate_tcs, repo_id, dry_run
         )
+        if not success:
+            summary["Failed merges"] += 1
+            continue
+        summary["Successful merges"] += 1
 
     logger.info("Finished merging duplicate top containers")
+    for key, value in summary.items():
+        logger.info(f"{key}: {value}")
 
 
 def main() -> None:
-    """Merge duplicate top containers in ArchivesSpace,
-    for a given resource (i.e. collection).
-
-    Summary of LSC ticket:
-    1. Retrieve all top containers in the collection.
-    2. Identify duplicate groups by type and indicator.
-    3. For each group, designate a canonical top container,
-      based on criteria provided by LSC.
-    4. Relink archival objects to the canonical top container.
-    5. Delete the duplicate top container(s).
-    """
+    """Entry-point for this program."""
     args = _get_args()
     configure_logging(Path(__file__).stem, args.dry_run)
     config = load_config(args.config_file)
@@ -326,8 +312,8 @@ def main() -> None:
         raise ValueError("DB connection settings are required.")
     aspace_client = ASnakeClient(**config)
 
-    _merge_duplicate_containers(
-        aspace_client, db_config, args.resource_id, args.dry_run
+    _process_duplicates_in_collection(
+        aspace_client, db_config, args.repo_id, args.resource_id, args.dry_run
     )
 
 
