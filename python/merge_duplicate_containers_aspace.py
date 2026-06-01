@@ -280,15 +280,28 @@ def _process_duplicates_in_collection(
         5. Delete the duplicate top container(s).
     """
     tcs_by_indicator = _get_tcs_by_indicator(aspace_client, db_config, resource_id)
-    # Find TC records that have duplicate (type, indicator) keys
+    # Group TC records by (type, indicator) keys
     duplicate_groups: list[tuple[str, str, list[dict]]] = [
         (type, indicator, tcs)
         for (type, indicator), tcs in tcs_by_indicator.items()
         if len(tcs) > 1
     ]
+    # If no duplicate groups are found, log a note and return
     if not duplicate_groups:
         logger.info(f"No duplicate top containers found for Resource ID {resource_id}.")
         return
+
+    # Now sort the duplicate groups alphabetically by type and numerically by indicator,
+    # to make review of the logs easier.
+    duplicate_groups = sorted(
+        duplicate_groups,
+        key=lambda group: (
+            group[0],  # sort alphabetically by type
+            (
+                int(group[1]) if group[1].isdigit() else group[1]
+            ),  # then numerically by indicator, if possible
+        ),
+    )
 
     summary = {
         "Total duplicate groups": len(duplicate_groups),
