@@ -58,7 +58,13 @@ def _get_tcs_by_indicator(
     db_config: dict,
     resource_id: int,
 ) -> defaultdict[tuple[str, str], list[dict]]:
-    """Get all top containers in the collection."""
+    """Get all top containers in the collection grouped by (type, indicator).
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param dict db_config: DB connection settings.
+    :param int resource_id: The ID of the resource to process.
+    :return: A dictionary with (type, indicator) keys, and lists of top container records as values.
+    """
     container_refs = get_container_refs_from_db(db_config, resource_id)
     logger.info(
         f"Fetched {len(container_refs)} container{'s' if len(container_refs) > 1 else ''} "
@@ -81,7 +87,7 @@ def _get_tcs_by_indicator(
     return tcs_by_indicator
 
 
-def _resolve_ao_refs_for_tcs(
+def _resolve_aos_for_tcs(
     aspace_client: ASnakeClient, db_config: dict, tcs: list[dict]
 ) -> list[dict]:
     """Resolve archival object refs to archival object dicts for a list of top container records.
@@ -326,7 +332,7 @@ def _process_duplicates_in_collection(
         # Resolve AO refs to their full dictionaries
         # to make it easier to check AO titles for recent accession keywords
         # on the whole top container group at once.
-        tcs = _resolve_ao_refs_for_tcs(aspace_client, db_config, tcs)
+        tcs = _resolve_aos_for_tcs(aspace_client, db_config, tcs)
         # Check for recent accession keywords in the titles of related archival objects
         # in the duplicate group, and stop processing the group if any are found.
         if _has_recent_accession_keywords(tcs):
