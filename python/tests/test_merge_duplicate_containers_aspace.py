@@ -4,7 +4,7 @@ import unittest
 from asnake import logging
 from merge_duplicate_containers_aspace import (
     _determine_canonical_tc,
-    _check_for_location_data,
+    _has_location_data,
     _has_recent_accession_keywords,
 )
 
@@ -214,8 +214,10 @@ class TestMergeDuplicateContainers(unittest.TestCase):
         ]
 
         with capture_logs() as logs:
-            _check_for_location_data(test_tcs)
+            result = _has_location_data(test_tcs)
 
+        # Function should return True and log a warning message
+        self.assertTrue(result)
         # There should only be one log message,
         # since the second TC shouldn't generate one
         # because it has no location data.
