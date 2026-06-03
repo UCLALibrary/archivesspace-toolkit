@@ -361,7 +361,11 @@ def _process_duplicates_in_collection(
 def main() -> None:
     """Entry-point for this program."""
     args = _get_args()
-    configure_logging(Path(__file__).stem, args.dry_run)
+
+    log_filename_stem = Path(__file__).stem
+    print(f"Logging to {log_filename_stem}.log")
+    configure_logging(log_filename_stem, args.dry_run)
+
     config = load_config(args.config_file)
     db_config = config.get("database")
     if not db_config:

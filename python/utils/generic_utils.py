@@ -24,15 +24,29 @@ def configure_logging(
     logs_dir.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = logs_dir / f"{log_filename_stem}_{timestamp}.log"
+
     logging.setup_logging(filename=log_filename, level="INFO")
+
+    # structlog's TimeStamper defaults to UTC, but we want the system's local time.
+    # The default config has a list of processors that includes a TimeStamper,
+    # so we need to find that and replace it with our own,
+    # with `utc=False` to use the system timezone.
+    processors = logging.default_structlog_conf()["processors"]
+    processors = [
+        (
+            logging.structlog.processors.TimeStamper(fmt="iso", utc=False)
+            if isinstance(processor, logging.structlog.processors.TimeStamper)
+            else processor
+        )
+        for processor in processors
+    ]
+    # For more human-readable output in dry run mode,
+    # replace the `JSONRenderer` with a `ConsoleRenderer`
+    # in structlog's processor list.
+    # See docs @https://www.structlog.org/en/stable/console-output.html
     if dry_run:
-        # The `asnake.logging` module uses `structlog`,
-        # which provides a pretty-print console logger called `ConsoleRenderer`.
-        # Using that here for a more human-readable format in dry run mode.
-        # See docs @https://www.structlog.org/en/stable/console-output.html
-        processors = logging.default_structlog_conf()["processors"]
         processors[-1] = logging.structlog.dev.ConsoleRenderer(colors=False)
-        logging.structlog.configure(processors=processors)
+    logging.structlog.configure(processors=processors)
 
 
 def load_config(config_file: str) -> dict:
