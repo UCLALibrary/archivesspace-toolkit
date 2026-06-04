@@ -375,8 +375,8 @@ def main() -> None:
     args = _get_args()
 
     log_filename_stem = Path(__file__).stem
-    print(f"Logging to {log_filename_stem}.log")
-    configure_logging(log_filename_stem, args.dry_run)
+    log_filename = configure_logging(log_filename_stem, args.dry_run)
+    print(f"Logging to {log_filename}...")
 
     config = load_config(args.config_file)
     db_config = config.get("database")

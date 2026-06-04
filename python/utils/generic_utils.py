@@ -12,13 +12,14 @@ from pathlib import Path
 def configure_logging(
     log_filename_stem: str = "log",
     dry_run: bool = False,
-) -> None:
+) -> str:
     """Configure ASnake logging using the provided log filename stem.
 
     :param str log_filename_stem: The filename stem to use for the configured log file.
         Defaults to "log".
     :param bool dry_run: If True, write human-readable lines for review.
         If False, use ASnake's default JSON line format. Defaults to False.
+    :return str: The name of the log file.
     """
     logs_dir = Path("logs")  # save logs to "./logs/"
     logs_dir.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
@@ -47,6 +48,8 @@ def configure_logging(
     if dry_run:
         processors[-1] = logging.structlog.dev.ConsoleRenderer(colors=False)
     logging.structlog.configure(processors=processors)
+
+    return log_filename.name
 
 
 def load_config(config_file: str) -> dict:
