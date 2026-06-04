@@ -257,9 +257,7 @@ class TestMergeDuplicateContainers(unittest.TestCase):
         self.assertEqual(len(logs), 1)
         self.assertEqual(
             logs[0]["event"],
-            "Archival object '/archival_objects/1' linked to top container '/top_containers/1' "
-            "may be recent accession: title='Accession 1'. "
-            "Manual review of duplicate group required.",
+            "Manual review required",
         )
         self.assertEqual(logs[0]["log_level"], "warning")
 

@@ -53,12 +53,12 @@ def _get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _get_tcs_by_indicator(
+def _get_tcs_grouped_by_type_and_indicator(
     aspace_client: ASnakeClient,
     db_config: dict,
     resource_id: int,
 ) -> defaultdict[tuple[str, str], list[dict]]:
-    """Get all top containers in the collection grouped by (type, indicator).
+    """Get all top containers in the resource grouped by (type, indicator).
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
     :param dict db_config: DB connection settings.
@@ -72,7 +72,9 @@ def _get_tcs_by_indicator(
     )
 
     # Group top containers by (type, indicator) to identify duplicates
-    tcs_by_indicator: defaultdict[tuple[str, str], list[dict]] = defaultdict(list)
+    tcs_grouped_by_type_and_indicator: defaultdict[tuple[str, str], list[dict]] = (
+        defaultdict(list)
+    )
     for ref in container_refs:
         try:
             response = aspace_client.get(ref)
@@ -83,8 +85,8 @@ def _get_tcs_by_indicator(
             continue
         type = tc.get("type", "")
         indicator = tc.get("indicator", "")
-        tcs_by_indicator[(type, indicator)].append(tc)
-    return tcs_by_indicator
+        tcs_grouped_by_type_and_indicator[(type, indicator)].append(tc)
+    return tcs_grouped_by_type_and_indicator
 
 
 def _resolve_aos_for_tcs(
@@ -117,10 +119,10 @@ def _resolve_aos_for_tcs(
 
 
 def _has_location_data(tcs: list[dict]) -> bool:
-    """Check for location data on a list of top container records
-    representing a duplicate group, flagging the group for review if found.
+    """Check for location data on a list of top container records,
+    logging a warning and returning True if found, False otherwise.
 
-    :param list[dict] tcs: List of top container records representing a duplicate group.
+    :param list[dict] tcs: List of top container records.
     :return: True if any top container has location data, False otherwise.
     """
     for tc in tcs:
@@ -134,11 +136,10 @@ def _has_location_data(tcs: list[dict]) -> bool:
 
 
 def _has_recent_accession_keywords(tcs: list[dict]) -> bool:
-    """Within a top container duplicate group, check for recent accession keywords
-    in the titles of related archival objects,
+    """Check for recent accession keywords in archival objects titles,
     logging a warning and returning True if found, False otherwise.
 
-    :param list[dict] tcs: List of top container records representing a duplicate group.
+    :param list[dict] tcs: List of top container records.
     :return: True if any recent accession keywords are found, False otherwise.
     """
     recent_accession_keywords = ["accession", "backlog"]
@@ -147,11 +148,7 @@ def _has_recent_accession_keywords(tcs: list[dict]) -> bool:
             if any(
                 keyword in ao["title"].lower() for keyword in recent_accession_keywords
             ):
-                logger.warning(
-                    f"Archival object '{ao['uri']}' linked to top container '{tc['uri']}' "
-                    f"may be recent accession: "
-                    f"title='{ao['title']}'. Manual review of duplicate group required."
-                )
+                logger.warning("Manual review required")
                 return True
     return False
 
@@ -168,13 +165,13 @@ def _determine_canonical_tc(tcs: list[dict]) -> tuple[dict, list[dict]]:
     # Had help from LLM for this concise implementation.
     # Selects the minimum value of the tuple returned by the lambda function,
     # which is the TC with the most related archival objects (i.e. smallest negative value)
-    # or the oldest `create_time` if there are ties in the AO counts.
+    # or the earliest (i.e. minimum) `create_time` if there are ties in the AO counts.
     canonical = min(
         tcs,
         key=lambda tc: (
-            -len(tc["_related_aos_temp"]),
+            -len(tc.get("_related_aos_temp", [])),
             # If a TC is missing the `create_time` field,
-            # default to a future date so it sorts after TCs with a create time
+            # default to a value that sorts after TCs with a create time
             tc.get("create_time", "9999-01-01T00:00:00Z"),
         ),
     )
@@ -238,32 +235,65 @@ def _print_summary(summary: dict, dry_run: bool) -> None:
     :param dict summary: Dict containing summary info for the run.
     :param bool dry_run: If True, print a dry run report.
     """
-    if dry_run:
-        lines = [
-            f"{'*' * 5} DRY RUN SUMMARY {'*' * 5}",
-            f"Total duplicate groups: {summary['Total duplicate groups']}",
-            f"Groups with location data: {summary['Groups with location data']}",
-            (
-                f"Groups with recent accession keywords:"
-                f" {summary['Groups with recent accession keywords']}"
-            ),
-        ]
-    else:
-        lines = [
-            f"{'*' * 5} SUMMARY {'*' * 5}",
-            f"Total duplicate groups: {summary['Total duplicate groups']}",
-            f"Groups with location data: {summary['Groups with location data']}",
-            (
-                f"Groups with recent accession keywords:"
-                f" {summary['Groups with recent accession keywords']}"
-            ),
-            f"Successful merges: {summary['Successful merges']}",
-            f"Failed merges: {summary['Failed merges']}",
-        ]
+    lines = [
+        f"{'*' * 5} {'DRY RUN' if dry_run else ''} SUMMARY {'*' * 5}",
+        f"Total duplicate groups: {summary['Total duplicate groups']}",
+        f"Groups with location data: {summary['Groups with location data']}",
+        (
+            f"Groups with recent accession keywords:"
+            f" {summary['Groups with recent accession keywords']}"
+        ),
+    ]
+    # Add additional success/failure info if in production mode
+    if not dry_run:
+        lines.extend(
+            [
+                f"Successful merges: {summary['Successful merges']}",
+                f"Failed merges: {summary['Failed merges']}",
+            ]
+        )
     lines.append(f"{'*' * len(lines[0])}")
     for line in lines:
         print(line)
         logger.info(line)
+
+
+def _get_duplicate_groups(
+    aspace_client: ASnakeClient,
+    db_config: dict,
+    resource_id: int,
+) -> list[tuple[str, str, list[dict]]]:
+    """Retrieve top containers in the resource
+    and identify duplicate groups as those with the same type and indicator.
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param dict db_config: DB connection settings.
+    :param int resource_id: The ID of the resource to process.
+    :return: A list of tuples representing duplicate groups,
+    comprising type, indicator, and a list of top container records.
+    """
+    tcs_grouped_by_type_and_indicator = _get_tcs_grouped_by_type_and_indicator(
+        aspace_client, db_config, resource_id
+    )
+
+    duplicate_groups: list[tuple[str, str, list[dict]]] = [
+        (type, indicator, tcs)
+        for (type, indicator), tcs in tcs_grouped_by_type_and_indicator.items()
+        if len(tcs) > 1
+    ]
+    # Now sort the duplicate groups,
+    # alphabetically by type and numerically by indicator,
+    # to make review of the logs easier.
+    duplicate_groups = sorted(
+        duplicate_groups,
+        key=lambda group: (
+            group[0],  # sort alphabetically by type
+            (
+                int(group[1]) if group[1].isdigit() else group[1]
+            ),  # then numerically by indicator, if possible
+        ),
+    )
+    return duplicate_groups
 
 
 def _process_duplicates_in_collection(
@@ -285,29 +315,11 @@ def _process_duplicates_in_collection(
         preserving archival object links in the process.
         5. Delete the duplicate top container(s).
     """
-    tcs_by_indicator = _get_tcs_by_indicator(aspace_client, db_config, resource_id)
-    # Group TC records by (type, indicator) keys
-    duplicate_groups: list[tuple[str, str, list[dict]]] = [
-        (type, indicator, tcs)
-        for (type, indicator), tcs in tcs_by_indicator.items()
-        if len(tcs) > 1
-    ]
+    duplicate_groups = _get_duplicate_groups(aspace_client, db_config, resource_id)
     # If no duplicate groups are found, log a note and return
     if not duplicate_groups:
         logger.info(f"No duplicate top containers found for Resource ID {resource_id}.")
         return
-
-    # Now sort the duplicate groups alphabetically by type and numerically by indicator,
-    # to make review of the logs easier.
-    duplicate_groups = sorted(
-        duplicate_groups,
-        key=lambda group: (
-            group[0],  # sort alphabetically by type
-            (
-                int(group[1]) if group[1].isdigit() else group[1]
-            ),  # then numerically by indicator, if possible
-        ),
-    )
 
     summary = {
         "Total duplicate groups": len(duplicate_groups),
@@ -323,11 +335,10 @@ def _process_duplicates_in_collection(
         )
 
         # Check for any location data in the duplicate group.
-        # Per ticket, this should not stop processing,
-        # but should be logged for visibility in dry run mode.
-        if dry_run and _has_location_data(tcs):
+        # Per ticket, this should not stop processing (no `continue` statement)
+        # but should be logged for visibility.
+        if _has_location_data(tcs):
             summary["Groups with location data"] += 1
-            continue
 
         # Resolve AO refs to their full dictionaries
         # to make it easier to check AO titles for recent accession keywords
@@ -336,6 +347,7 @@ def _process_duplicates_in_collection(
         # Check for recent accession keywords in the titles of related archival objects
         # in the duplicate group, and stop processing the group if any are found.
         if _has_recent_accession_keywords(tcs):
+            logger.warning("Found recent accession keywords in archival objects titles")
             summary["Groups with recent accession keywords"] += 1
             continue
 
