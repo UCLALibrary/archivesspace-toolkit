@@ -100,24 +100,50 @@ def _get_all_top_containers_for_resource(
     return all_tcs
 
 
+def _get_aspace_resource_info(
+    aspace_client: ASnakeClient,
+    resource_uri: str,
+) -> tuple[str, str]:
+    """Get the human-readable identifier and title for the given resource.
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param str resource_uri: The URI of the resource to process.
+    :return tuple[str, str]: A tuple of the human-readable identifier and the title of the resource.
+    """
+    resource = aspace_client.get(resource_uri).json()
+    # ArchiveSpace resource object has 4 identifier fields, `id_0` to `id_3`.
+    # Join all available parts to get human-readable identifier.
+    human_readable_id = "-".join(
+        [resource.get(f"id_{i}", "") for i in range(4) if resource.get(f"id_{i}", "")]
+    )
+    return human_readable_id, resource.get("title", "")
+
+
 def _prepare_report_rows(
     unmatched_alma_items: list[dict],
-    resource_id: int,
-    bib_id: str,
+    alma_bib_id: str,
+    aspace_resource_uri: str,
+    aspace_resource_id_human_readable: str,
+    aspace_resource_title: str,
 ) -> list[dict]:
     """Prepare CSV row dicts for unmatched Alma items.
 
     :param list[dict] unmatched_alma_items: A list of Alma item dicts.
-    :param int resource_id: The ID of the ASpace resource.
-    :param str bib_id: The Alma bib ID.
+    :param str alma_bib_id: The Alma bib ID.
+    :param str aspace_resource_uri: The URI of the ASpace resource.
+    :param str aspace_resource_id_human_readable: The human readable identifier
+    of the ASpace resource (e.g. "LSC--0293").
+    :param str aspace_resource_title: The title of the ASpace resource.
     :return list[dict]: A list of CSV row dictionaries.
     """
     rows: list[dict] = []
     for alma_item in unmatched_alma_items:
         rows.append(
             {
-                "ASpace Resource ID": resource_id,
-                "Alma Bib ID": bib_id,
+                "ASpace Resource URI": aspace_resource_uri,
+                "ASpace Resource Identifier": aspace_resource_id_human_readable,
+                "ASpace Collection Title": aspace_resource_title,
+                "Alma Bib ID": alma_bib_id,
                 "Alma Item Barcode": alma_item.get("barcode", ""),
                 "Alma Box Identifier": alma_item.get("description", ""),
                 "ASpace Match Found": "No",  # this is always "No" for unmatched items
@@ -165,6 +191,12 @@ def main() -> None:
         f"Fetched {len(aspace_top_containers)} "
         f"top container{'s' if len(aspace_top_containers) > 1 else ''} from ASpace"
     )
+
+    # For use in report
+    aspace_resource_uri = f"/repositories/{args.repo_id}/resources/{args.resource_id}"
+    aspace_resource_id_human_readable, aspace_resource_title = (
+        _get_aspace_resource_info(aspace_client, aspace_resource_uri)
+    )
     # Reuse the `indicator_type_matching` logic to create aspace match data dict
     aspace_match_data, _ = get_aspace_match_data(aspace_top_containers)
 
@@ -193,7 +225,13 @@ def main() -> None:
 
     # Write the CSV report
     print(f"Writing CSV report to {args.output_path}")
-    rows = _prepare_report_rows(unmatched_alma_items, args.resource_id, args.bib_id)
+    rows = _prepare_report_rows(
+        unmatched_alma_items,
+        args.bib_id,
+        aspace_resource_uri,
+        aspace_resource_id_human_readable,
+        aspace_resource_title,
+    )
     output_path = Path(args.output_path)
     write_dicts_to_csv(output_path, rows)
 
