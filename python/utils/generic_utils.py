@@ -1,24 +1,55 @@
 """Generic utility functions for reuse across scripts."""
 
-import asnake.logging as logging
 import csv
 import json
 import yaml
+
+from asnake import logging
 from datetime import datetime
 from pathlib import Path
 
 
-def configure_logging(log_filename_stem: str = "log") -> None:
+def configure_logging(
+    log_filename_stem: str = "log",
+    dry_run: bool = False,
+) -> str:
     """Configure ASnake logging using the provided log filename stem.
 
     :param str log_filename_stem: The filename stem to use for the configured log file.
         Defaults to "log".
+    :param bool dry_run: If True, write human-readable lines for review.
+        If False, use ASnake's default JSON line format. Defaults to False.
+    :return str: The name of the log file.
     """
     logs_dir = Path("logs")  # save logs to "./logs/"
     logs_dir.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = logs_dir / f"{log_filename_stem}_{timestamp}.log"
+
     logging.setup_logging(filename=log_filename, level="INFO")
+
+    # structlog's TimeStamper defaults to UTC, but we want the system's local time.
+    # The default config has a list of processors that includes a TimeStamper,
+    # so we need to find that and replace it with our own,
+    # with `utc=False` to use the system timezone.
+    processors = logging.default_structlog_conf()["processors"]
+    processors = [
+        (
+            logging.structlog.processors.TimeStamper(fmt="iso", utc=False)
+            if isinstance(processor, logging.structlog.processors.TimeStamper)
+            else processor
+        )
+        for processor in processors
+    ]
+    # For more human-readable output in dry run mode,
+    # replace the `JSONRenderer` with a `ConsoleRenderer`
+    # in structlog's processor list.
+    # See docs @https://www.structlog.org/en/stable/console-output.html
+    if dry_run:
+        processors[-1] = logging.structlog.dev.ConsoleRenderer(colors=False)
+    logging.structlog.configure(processors=processors)
+
+    return log_filename.name
 
 
 def load_config(config_file: str) -> dict:
