@@ -129,7 +129,8 @@ def _has_location_data(tcs: list[dict]) -> bool:
         locations = tc.get("container_locations", [])
         if locations:
             logger.warning(
-                f"Top container {tc.get('uri')} has location data: {locations}"
+                f"Top container {tc.get('uri')} has location data: "
+                f"{[location.get('ref') for location in locations]}"
             )
             return True
     return False
