@@ -203,7 +203,10 @@ class TestMergeDuplicateContainers(unittest.TestCase):
                 "uri": "/top_containers/1",
                 "type": "box",
                 "indicator": "1",
-                "container_locations": ["location1", "location2"],
+                "container_locations": [
+                    {"ref": "/locations/1"},
+                    {"ref": "/locations/2"},
+                ],
             },
             {
                 "uri": "/top_containers/2",
@@ -224,7 +227,7 @@ class TestMergeDuplicateContainers(unittest.TestCase):
         self.assertEqual(len(logs), 1)
         self.assertEqual(
             logs[0]["event"],
-            "Top container /top_containers/1 has location data: ['location1', 'location2']",
+            "Top container /top_containers/1 has location data: ['/locations/1', '/locations/2']",
         )
         self.assertEqual(logs[0]["log_level"], "warning")
 
