@@ -161,7 +161,10 @@ def _apply_container_profile(tc: dict, alma_item: dict) -> bool:
             f"(barcode {alma_item.get('barcode')}); skipping container profile update"
         )
         return False
-
+    logger.info(
+        f"Setting container profile for top container {tc.get('uri')} "
+        f"to {profile_ref} based on VolEquiv '{vol_equiv}'"
+    )
     tc["container_profile"] = {"ref": profile_ref}
     return True
 
@@ -174,6 +177,10 @@ def _apply_ils_ids(tc: dict, alma_item: dict) -> None:
     :param dict tc: ASpace top container dict to update.
     :param dict alma_item: Alma item dict for the matched item.
     """
+    logger.info(
+        f"Setting ILS Holding ID and ILS Item ID for top container {tc.get('uri')} "
+        f"from Alma item {alma_item.get('item_id')} (barcode {alma_item.get('barcode')})"
+    )
     tc["ils_holding_id"] = alma_item.get("holding_id", "")
     tc["ils_item_id"] = alma_item.get("item_id", "")
 
@@ -185,6 +192,9 @@ def _append_internal_note(tc: dict, timestamp: str) -> None:
     :param dict tc: ASpace top container dict to update.
     :param str timestamp: ISO 8601 timestamp string for the migration note.
     """
+    logger.info(
+        f"Appending migration note to internal_note for top container {tc.get('uri')}"
+    )
     migration_note = (
         f"Metadata updated in a scripted batch migration "
         f"from Alma item record on {timestamp}"
