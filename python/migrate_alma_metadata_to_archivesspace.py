@@ -19,8 +19,8 @@ logger = logging.get_logger(Path(__file__).stem)
 
 # CONSTANTS
 
-# Alma location names for SRLF items that should have their location updated in ASpace.
-SRLF_NAMES = {"SLF-S PERF", "SLF-S BIOMEDSC", "SLF-S YRLSC", "SLF-S UAR"}
+# Alma location codes for SRLF items that should have their location updated in ASpace.
+SRLF_CODES = {"srar2", "srbi2", "sryr2", "sryr7"}
 
 # Alma VolEquiv values (from Internal Note 1) mapped to ASpace container profile refs.
 VOLEQUIV_TO_CONTAINER_PROFILE = {
@@ -78,40 +78,40 @@ def _get_args() -> argparse.Namespace:
 
 
 def _resolve_srlf_location_refs(
-    aspace_client: ASnakeClient, srlf_names: set[str]
+    aspace_client: ASnakeClient, srlf_codes: set[str]
 ) -> dict[str, str]:
-    """Build a mapping of SRLF location name to ASpace location ref at runtime.
+    """Build a mapping of SRLF location code to ASpace location ref at runtime.
 
-    Pages through ASpace locations to find entries matching the known SRLF names,
-    returning early once all are resolved. Raises RuntimeError if any name cannot
+    Pages through ASpace locations to find entries matching the known SRLF codes,
+    returning early once all are resolved. Raises RuntimeError if any code cannot
     be found, so the script fails before touching any data rather than silently
     skipping location updates in the main loop.
 
-    TODO: LSC to decide which ASpace field will be used to store the SRLF name.
+    TODO: LSC to decide which ASpace field will be used to store the SRLF code.
     For now, this method checks the "barcode" field.
 
     :param ASnakeClient aspace_client: ASnakeClient instance.
-    :param set[str] srlf_names: Alma location names to resolve.
-    :return: Dict mapping Alma location name to ASpace location ref string.
+    :param set[str] srlf_codes: Alma location codes to resolve.
+    :return: Dict mapping Alma location code to ASpace location ref string.
     """
-    logger.info("Resolving ASpace location refs for SRLF names.")
+    logger.info("Resolving ASpace location refs for SRLF codes.")
     resolved: dict[str, str] = {}
 
     for location in aspace_client.get_paged("/locations"):
-        location_name = (
+        location_code = (
             location.get("barcode") or ""
         )  # TODO: replace with correct field
-        if location_name in srlf_names:
-            resolved[location_name] = location["uri"]
-            logger.info(f"Resolved SRLF name '{location_name}' to {location['uri']}")
-        if len(resolved) == len(srlf_names):
+        if location_code in srlf_codes:
+            resolved[location_code] = location["uri"]
+            logger.info(f"Resolved SRLF code '{location_code}' to {location['uri']}")
+        if len(resolved) == len(srlf_codes):
             break
 
-    missing = srlf_names - resolved.keys()
+    missing = srlf_codes - resolved.keys()
     if missing:
         raise RuntimeError(
-            f"Could not resolve ASpace location refs for SRLF names: {missing}. "
-            "Verify these location names exist in ASpace before running the script."
+            f"Could not resolve ASpace location refs for SRLF codes: {missing}. "
+            "Verify these location codes exist in ASpace before running the script."
         )
 
     return resolved
@@ -207,26 +207,26 @@ def _append_internal_note(tc: dict, timestamp: str) -> None:
 
 
 def _apply_location(
-    tc: dict, location_name: str, location_refs: dict[str, str]
+    tc: dict, location_code: str, location_refs: dict[str, str]
 ) -> bool:
     """Replace the container_locations array with a single current SRLF location.
 
     Mutates tc in place. Returns True if the location was applied, False if no
-    ASpace ref is available for the given name.
+    ASpace ref is available for the given code.
 
     Replaces any pre-existing container_locations entries. For this migration
     context that is intentional: we are asserting the authoritative current
     location for SRLF items. The internal note records that this change was scripted.
 
     :param dict tc: ASpace top container dict to update.
-    :param str location_name: Alma location name (already confirmed to be in SRLF_NAMES).
-    :param dict[str, str] location_refs: Resolved mapping of name to ASpace location ref.
+    :param str location_code: Alma location code (already confirmed to be in SRLF_CODES).
+    :param dict[str, str] location_refs: Resolved mapping of code to ASpace location ref.
     :return: True if location was applied, False otherwise.
     """
-    location_ref = location_refs.get(location_name)
+    location_ref = location_refs.get(location_code)
     if not location_ref:
         logger.warning(
-            f"No ASpace location ref available for SRLF name '{location_name}'; "
+            f"No ASpace location ref available for SRLF code '{location_code}'; "
             "skipping location update"
         )
         return False
@@ -301,7 +301,7 @@ def main() -> None:
     aspace_client = ASnakeClient(**config)
 
     # Resolve SRLF location refs once at startup; fail early if any are missing.
-    srlf_location_refs = _resolve_srlf_location_refs(aspace_client, SRLF_NAMES)
+    srlf_location_refs = _resolve_srlf_location_refs(aspace_client, SRLF_CODES)
 
     # Fetch source data.
     alma_items = get_alma_items(
@@ -361,17 +361,15 @@ def main() -> None:
             skipped_profile.append(tc["uri"])
 
         # Conditional update: location only for SRLF items.
-        # Alma calls this "location_code", but it's actually the name
-        # (e.g. "SLF-S YRLSC", not "sryr2").
-        location_name = (alma_item.get("location_code") or "").strip().lower()
-        if location_name in SRLF_NAMES:
-            if not _apply_location(tc, location_name, srlf_location_refs):
+        location_code = (alma_item.get("location").get("value") or "").strip().lower()
+        if location_code in SRLF_CODES:
+            if not _apply_location(tc, location_code, srlf_location_refs):
                 skipped_location.append(tc["uri"])
         else:
             skipped_location.append(tc["uri"])
             logger.info(
                 f"Skipped location update for {tc['uri']}: "
-                f"location name '{location_name}' is not an SRLF name"
+                f"location code '{location_code}' is not an SRLF code"
             )
 
         if not args.dry_run:
