@@ -214,9 +214,7 @@ def _apply_location(
     Mutates tc in place. Returns True if the location was applied, False if no
     ASpace ref is available for the given code.
 
-    Replaces any pre-existing container_locations entries. For this migration
-    context that is intentional: we are asserting the authoritative current
-    location for SRLF items. The internal note records that this change was scripted.
+    Replaces any pre-existing container_locations entries.
 
     :param dict tc: ASpace top container dict to update.
     :param str location_code: Alma location code (already confirmed to be in SRLF_CODES).
@@ -361,7 +359,9 @@ def main() -> None:
             skipped_profile.append(tc["uri"])
 
         # Conditional update: location only for SRLF items.
-        location_code = (alma_item.get("location").get("value") or "").strip().lower()
+        location_code = (
+            (alma_item.get("location", {}).get("value") or "").strip().lower()
+        )
         if location_code in SRLF_CODES:
             if not _apply_location(tc, location_code, srlf_location_refs):
                 skipped_location.append(tc["uri"])
