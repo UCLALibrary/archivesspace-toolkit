@@ -361,7 +361,9 @@ def main() -> None:
             skipped_profile.append(tc["uri"])
 
         # Conditional update: location only for SRLF items.
-        location_name = (alma_item.get("location_name") or "").strip().lower()
+        # Alma calls this "location_code", but it's actually the name
+        # (e.g. "SLF-S YRLSC", not "sryr2").
+        location_name = (alma_item.get("location_code") or "").strip().lower()
         if location_name in SRLF_NAMES:
             if not _apply_location(tc, location_name, srlf_location_refs):
                 skipped_location.append(tc["uri"])
