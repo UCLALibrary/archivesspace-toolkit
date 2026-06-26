@@ -8,6 +8,7 @@ that can be reused across multiple scripts in the toolkit.
 from asnake.client import ASnakeClient
 from MySQLdb import connect
 from MySQLdb.cursors import DictCursor
+from utils.generic_utils import read_from_cache, write_to_cache
 
 
 def get_container_refs_from_api(
@@ -110,3 +111,57 @@ def get_ao_refs_for_top_container_from_db(
     cursor.close()
     mysql_client.close()
     return ao_refs
+
+
+def _get_containers_from_container_refs(
+    aspace_client: ASnakeClient, container_refs: set[str]
+) -> list[dict]:
+    """Returns a list of full container dicts for the given refs,
+    filtered to those linked to a published resource.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param set[str] container_refs: A set of top container ref URIs.
+    :return: A list of container dicts.
+    """
+    containers = []
+    for ref in container_refs:
+        tc_json: dict = aspace_client.get(ref).json()
+        if not tc_json.get("is_linked_to_published_record"):
+            # Skip containers that are not linked to a published resource.
+            continue
+        containers.append(tc_json)
+    return containers
+
+
+def get_aspace_containers(
+    aspace_client: ASnakeClient,
+    repo_id: int,
+    resource_id: int,
+    use_db: bool,
+    use_cache: bool,
+) -> list[dict]:
+    """Returns full container data for all top containers linked to the given resource,
+    using a cache file if available.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int repo_id: ASpace repository ID.
+    :param int resource_id: ASpace resource ID for target collection.
+    :param bool use_db: If True, get container refs from DB instead of API.
+    :param bool use_cache: If True, read from cache file if available.
+    :return: A list of container dicts linked to published resources.
+    """
+    containers = None
+    aspace_cache_file = f"aspace_data_{resource_id}.json"
+    if use_cache:
+        containers = read_from_cache(aspace_cache_file)
+    if not containers:
+        if use_db:
+            db_settings = aspace_client.config.get("database")
+            container_refs = get_container_refs_from_db(db_settings, resource_id)
+        else:
+            container_refs = get_container_refs_from_api(
+                aspace_client, repo_id, resource_id
+            )
+        containers = _get_containers_from_container_refs(aspace_client, container_refs)
+        write_to_cache(containers, aspace_cache_file)
+    return containers

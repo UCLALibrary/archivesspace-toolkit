@@ -6,6 +6,7 @@ that can be reused across multiple scripts in the toolkit.
 """
 
 from alma_api_client import AlmaAPIClient
+from utils.generic_utils import read_from_cache, write_to_cache
 
 
 def get_alma_items_from_alma(
@@ -43,4 +44,25 @@ def get_alma_items_from_alma(
         for item in items:
             alma_items.append(item.get("item_data"))
         offset += 100
+    return alma_items
+
+
+def get_alma_items(
+    alma_client: AlmaAPIClient, bib_id: str, holdings_id: str, use_cache: bool
+) -> list[dict]:
+    """Returns item data from Alma, using a cache file if available.
+
+    :param AlmaAPIClient alma_client: AlmaAPIClient instance.
+    :param str bib_id: Bib MMS ID for the target collection.
+    :param str holdings_id: Holdings ID for the target collection.
+    :param bool use_cache: If True, read from cache file if available.
+    :return: A list of dicts representing Alma items.
+    """
+    alma_items = None
+    alma_cache_file = f"alma_data_{holdings_id}.json"
+    if use_cache:
+        alma_items = read_from_cache(alma_cache_file)
+    if not alma_items:
+        alma_items = get_alma_items_from_alma(alma_client, bib_id, holdings_id)
+        write_to_cache(alma_items, alma_cache_file)
     return alma_items

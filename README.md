@@ -147,7 +147,7 @@ docker compose exec python python add_alma_barcodes_to_archivesspace.py \
     --bib_id 123456789 \
     --holdings_id 987654321 \
     --resource_id 1234 \
-    --profile indicator_type_matching.py \
+    --profile config.indicator_type_matching.py \
     --config_file .archivessnake_secret_DEV.yml \
     --dry_run \
     --use_cache \
@@ -230,6 +230,65 @@ To "undo" barcodes recorded in a log file, use the following CLI flags as additi
 Note that `--use_log` cannot be used without `--undo_barcoding`. However, if `--undo_barcoding` is used without `--use_log`, the utility will prompt twice for confirmation before deleting all barcodes related to the provided `resource_id`.
 
 The utility also accepts the `--dry_run` flag, for mock usage before running it live.
+
+## Migrating Alma Metadata to ArchivesSpace
+### General process
+This script migrates additional metadata from Alma item records to the corresponding ArchivesSpace Top Container records for a given collection. It is intended to be run after barcodes have been successfully transferred using add_alma_barcodes_to_archivesspace.py, and uses the same matching profiles and authentication setup.
+
+For each matched Alma item / ASpace Top Container pair, the script updates:
+
+- ILS Holding ID and ILS Item ID, carried over from the Alma item record
+- Container Profile, derived from the VolEquiv value in Alma Internal Note 1
+- Internal Note, appended with a timestamped record of the migration
+- Location (SRLF items only), updated to the corresponding ASpace Location record based on the Alma location name
+
+Location updates are conditional: only items at specified SRLF locations (srar2/SLF-S PERF, srbi2/SLF-S BIOMEDSC, sryr2/SLF-S YRLSC, sryr7/SLF-S UAR) will have their ASpace location updated. All other metadata fields are updated unconditionally for every matched container.
+
+### Using the migration script
+To migrate metadata from Alma to ArchivesSpace, use the script `migrate_alma_metadata_to_archivesspace.py`.
+The script takes the following required arguments:
+
+- `--bib_id`: The Alma bib MMS ID for the collection
+- `--holdings_id`: The Alma holdings ID for the collection
+- `--resource_id`: The ArchivesSpace resource ID for the collection
+- `--profile`: The configuration profile to use to match Alma items to ArchivesSpace top containers (same profiles as the barcoding script; see Configuration Profiles)
+- `--config_file`: A YAML file containing configuration information, as described in the "API configuration files" section above
+
+The script also takes the following optional arguments:
+
+- `--repo_id`: The ASpace repository ID (default: 2)
+- `--use_db`: If set, the script will get ArchivesSpace top container information from the database instead of the API. Recommended for large collections where the API may time out.
+- `--dry_run`: If set, the script will not make any changes to ArchivesSpace. Log output will be in a more human-readable format for easier review.
+- `--print_output`: If set, the script will print log output to the console in addition to writing it to the log file.
+- `--use_cache`: If set, the script will use cached Alma and ASpace data from a previous run instead of making API calls.
+
+#### Example usage
+With all containers running, run the script from the main project directory:
+
+```
+docker compose exec python python migrate_alma_metadata_to_archivesspace.py \
+    --bib_id 9969119863606533 \
+    --holdings_id 22531983170006533 \
+    --resource_id 1415 \
+    --profile config.indicator_type_matching \
+    --config_file .archivessnake_secret_DEV.yml \
+    --dry_run \
+    --print_output
+```
+
+### Configuration profiles
+This script uses the same matching profiles as the barcoding script. See [Configuration Profiles](#configuration-profiles) and [Determining the correct profile](#determining-the-correct-profile) above.
+
+### Evaluating the script output
+After running the script, you will see the following output files:
+
+- `logs/migrate_alma_metadata_to_archivesspace_{timestamp}.log`: The main log file, ending with a summary of totals, matches, and skipped items.
+- `unhandled_migrate_alma_metadata_to_archivesspace.json`: A JSON file containing any unmatched or duplicate items. Contains the same categories as the barcoding script's unhandled output, except `top_containers_with_barcode` (not applicable here).
+
+The log summary also includes counts of containers skipped for location update (non-SRLF items) and container profile update (missing or unrecognized VolEquiv).
+
+### Running the migration script against hosted ArchivesSpace (Test and Production)
+The process is the same as for the barcoding script. See [Updating barcodes in hosted ArchivesSpace (Test and Production)](#updating-barcodes-in-hosted-archivesspace-test-and-production) above.
 
 ## Rebuilding Solr Index
 
