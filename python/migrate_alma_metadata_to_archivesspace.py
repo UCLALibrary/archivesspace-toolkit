@@ -209,7 +209,7 @@ def _append_internal_note(tc: dict, timestamp: str) -> None:
 
 
 def _apply_location(
-    tc: dict, location_code: str, location_refs: dict[str, str], timestamp: str
+    tc: dict, location_code: str, location_refs: dict[str, str], start_date: str
 ) -> bool:
     """Replace the container_locations array with a single current SLF-S location.
 
@@ -221,7 +221,7 @@ def _apply_location(
     :param dict tc: ASpace top container dict to update.
     :param str location_code: Alma location code (already confirmed to be in SLFS_CODES).
     :param dict[str, str] location_refs: Resolved mapping of code to ASpace location ref.
-    :param str timestamp: ISO 8601 timestamp string for the start_date of the location.
+    :param str start_date: ISO 8601 date string for the start_date of the location.
     :return: True if location was applied, False otherwise.
     """
     location_ref = location_refs.get(location_code)
@@ -237,7 +237,7 @@ def _apply_location(
             "jsonmodel_type": "container_location",
             "ref": location_ref,
             "status": "current",
-            "start_date": timestamp,
+            "start_date": start_date,
         }
     ]
     return True
