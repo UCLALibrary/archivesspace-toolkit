@@ -221,6 +221,7 @@ def _apply_location(
     :param dict tc: ASpace top container dict to update.
     :param str location_code: Alma location code (already confirmed to be in SLFS_CODES).
     :param dict[str, str] location_refs: Resolved mapping of code to ASpace location ref.
+    :param str timestamp: ISO 8601 timestamp string for the start_date of the location.
     :return: True if location was applied, False otherwise.
     """
     location_ref = location_refs.get(location_code)
@@ -346,6 +347,8 @@ def main() -> None:
 
     # Single timestamp shared across all notes written in this run.
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Date-only timestamp, for use in start_date
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     skipped_location: list[str] = []
     skipped_profile: list[str] = []
@@ -373,7 +376,7 @@ def main() -> None:
             (alma_item.get("location", {}).get("value") or "").strip().lower()
         )
         if location_code in SLFS_CODES:
-            if not _apply_location(tc, location_code, slfs_location_refs, timestamp):
+            if not _apply_location(tc, location_code, slfs_location_refs, today):
                 skipped_location.append(tc["uri"])
         else:
             skipped_location.append(tc["uri"])
@@ -383,8 +386,14 @@ def main() -> None:
             )
 
         if not args.dry_run:
-            aspace_client.post(tc["uri"], json=tc)
-            logger.info(f"Updated metadata for top container {tc['uri']}")
+            response = aspace_client.post(tc["uri"], json=tc)
+            if response.status_code == 200:
+                logger.info(f"Updated metadata for top container {tc['uri']}")
+            else:
+                logger.error(
+                    f"Failed to update top container {tc['uri']}: "
+                    f"{response.status_code} {response.text}"
+                )
 
     if args.dry_run:
         logger.info(
