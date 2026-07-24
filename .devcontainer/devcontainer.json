@@ -1,28 +1,31 @@
 {
-	"name": "ASpace Python",
-	"dockerComposeFile": "../docker-compose.yml",
-	"service": "python",
-	"workspaceFolder": "/home/aspace/app",
-	"customizations": {
-			"vscode": {
-					"extensions": [
-							"ms-python.python",
-							"ms-python.black-formatter",
-							"ms-python.flake8"
-					],
-					"settings": {
-							"editor.formatOnSave": true,
-							"python.analysis.typeCheckingMode": "standard",
-							"python.analysis.diagnosticSeverityOverrides": {
-								// Downgrade errors for ASnakeClient .get() requests
-								"reportAttributeAccessIssue": "information"
-							},
-							"python.editor.defaultFormatter": "ms-python.black-formatter",
-					"flake8.args": [
-									"--max-line-length=100",
-									"--extend-ignore=E203"
-							]
-					}
-			}
-	}
+  "name": "ASpace Python",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "python",
+  "workspaceFolder": "/home/aspace/app",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python@2026.4.0",
+        "ms-python.vscode-pylance@2026.2.1",
+        "ms-python.black-formatter@2026.6.0",
+        "ms-python.flake8@2026.6.0"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "python.analysis.typeCheckingMode": "standard",
+        "python.analysis.diagnosticSeverityOverrides": {
+          // Downgrade errors for ASnakeClient .get() requests
+          "reportAttributeAccessIssue": "information"
+        },
+        "python.editor.defaultFormatter": "ms-python.black-formatter",
+        "extensions.autoUpdate": false,
+        "extensions.autoCheckUpdates": true,
+        "flake8.args": [
+          "--max-line-length=100",
+          "--extend-ignore=E203"
+        ]
+      }
+    }
+  }
 }
