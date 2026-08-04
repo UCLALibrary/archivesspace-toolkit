@@ -5,42 +5,47 @@
 # Be strict about errors, unset variables, and pipeline failures.
 set -euo pipefail
 
-IMAGE="uclalibrary/archivesspace-toolkit:latest"
-SECRETS_DIR="/home/ztucker/aspace-config"
-LOGS_DIR="/home/ztucker/aspace-output"
-mkdir -p "${LOGS_DIR}"
+# Define the Docker Compose file and data directory for use with ASpace scripts.
+# Create necessary directories for secrets and logs.
+COMPOSE_FILE="docker-compose_scripts.yml"
+export ASPACE_DATA_DIR="${ASPACE_DATA_DIR:-$HOME/aspace-data}"
+mkdir -p "${ASPACE_DATA_DIR}/secrets" "${ASPACE_DATA_DIR}/logs"
 
 # Check that the user provided at least one argument (the script name). 
-#If not, print usage information and exit with an error code.
+# If not, print usage information and exit with an error code.
 if [ "$#" -lt 1 ]; then
   echo "Usage: $(basename "$0") <script_name.py> [script args...]"
   exit 1
 fi
 
-# Build an array of Docker mount arguments for each config file in the secrets directory.
-# Each config file will be mounted into the container at /home/aspace/app/<filename>.
-MOUNT_ARGS=()
-# Temporarily enable dotglob so we can find config files starting with a dot
-shopt -s dotglob
-for f in "${SECRETS_DIR}"/*.yml; do
-  fname="$(basename "$f")"
-  MOUNT_ARGS+=(-v "${f}:/home/aspace/app/${fname}")
-done
-shopt -u dotglob
+docker compose -f "${COMPOSE_FILE}" up -d
 
-CONTAINER_NAME="aspace-run-$$"
+# Create a temporary marker file in the container so we have a timestamp to compare against
+# when looking for newly created files.
+MARKER="/tmp/run_marker_$$"
+# Use 
+docker compose -f "${COMPOSE_FILE}" exec -T scripts touch "${MARKER}"
 
-# Run without --rm: we need the stopped container around briefly
-# so we can pull out whatever log/output files it created, since we
-# don't know their exact names in advance.
-docker run --name "${CONTAINER_NAME}" "${MOUNT_ARGS[@]}" "${IMAGE}" python "$@"
+# Run the specified Python script inside the container, passing along any additional arguments. 
+# Capture the exit code for later use.
+docker compose -f "${COMPOSE_FILE}" exec scripts python "$@"
 EXIT_CODE=$?
 
-# Copy out anything newly created (.log, .json) without needing to know
-# the exact filename, then discard the container.
-for f in $(docker diff "${CONTAINER_NAME}" | awk '$1 == "A" && ($2 ~ /\.log$/ || $2 ~ /\.json$/) {print $2}'); do
-  docker cp "${CONTAINER_NAME}:${f}" "${LOGS_DIR}/"
-done
-docker rm "${CONTAINER_NAME}" >/dev/null
+# Find anything .json or .log created since the marker was touched, anywhere
+# under the working directory, excluding the two paths that are already
+# directly mounted to the host (no need to copy those back out).
+NEW_FILES=$(docker compose -f "${COMPOSE_FILE}" exec -T scripts bash -c \
+  "find /home/aspace/app -type f -newer '${MARKER}' \
+    \( -name '*.json' -o -name '*.log' \) \
+    -not -path '*/logs/*' -not -path '*/secrets/*'")
+
+# Copy any newly created files back out to the host's data directory, 
+# preserving their relative paths.
+while IFS= read -r f; do
+  [ -n "$f" ] && docker compose -f "${COMPOSE_FILE}" cp "scripts:${f}" "${ASPACE_DATA_DIR}/"
+done <<< "${NEW_FILES}"
+
+# Clean up the temporary marker file in the container.
+docker compose -f "${COMPOSE_FILE}" exec -T scripts rm -f "${MARKER}"
 
 exit "${EXIT_CODE}"

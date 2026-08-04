@@ -1,0 +1,8 @@
+services:
+  scripts:
+    image: uclalibrary/archivesspace-toolkit:latest
+    container_name: aspace-scripts
+    command: sleep infinity
+    volumes:
+      - ${ASPACE_DATA_DIR}/secrets:/home/aspace/app/secrets
+      - ${ASPACE_DATA_DIR}/logs:/home/aspace/app/logs
