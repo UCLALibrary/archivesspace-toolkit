@@ -68,8 +68,8 @@ def main() -> None:
     print(f"{rows_updated_with_counts} of {total_rows} rows were updated with counts.")
 
     output_filename = Path(args.file_name).stem + "_with_container_counts.csv"
-    print(f"Writing counts to {output_filename}...")
-    write_dicts_to_csv(Path(output_filename), data_with_counts)
+    resolved_output_path = write_dicts_to_csv(output_filename, data_with_counts)
+    print(f"Counts written to {resolved_output_path}")
 
 
 if __name__ == "__main__":

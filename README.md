@@ -147,7 +147,7 @@ docker compose exec python python add_alma_barcodes_to_archivesspace.py \
     --bib_id 123456789 \
     --holdings_id 987654321 \
     --resource_id 1234 \
-    --profile config.indicator_type_matching.py \
+    --profile config.indicator_type_matching \
     --config_file .archivessnake_secret_DEV.yml \
     --dry_run \
     --use_cache \
@@ -185,10 +185,10 @@ We have only barcoded a few collections so far, so the profiles may need to be a
 ### Evaluating the script output
 
 After running the script, you will see several output files:
-- `add_alma_barcodes_to_archivesspace_{timestamp}.log`: The main log file.
-- `unhandled_add_alma_barcodes_to_archivesspace_{timestamp}.json`: A JSON file containing Alma items that were not matched to ArchivesSpace top containers.
-- `aspace_data_{resource_id}.json`: A JSON file containing the ArchivesSpace top container data for the resource. This file is used as a data source for the script if the `--use_cache` flag is set.
-- `alma_data_{bib_id}_{holdings_id}.json`: A JSON file containing the Alma item data for the collection. This file is used as a data source for the script if the `--use_cache` flag is set.
+- `/logs/add_alma_barcodes_to_archivesspace_{timestamp}.log`: The main log file.
+- `/output/unhandled_add_alma_barcodes_to_archivesspace.json`: A JSON file containing Alma items that were not matched to ArchivesSpace top containers.
+- `/output/aspace_data_{resource_id}.json`: A JSON file containing the ArchivesSpace top container data for the resource. This file is used as a data source for the script if the `--use_cache` flag is set.
+- `/output/alma_data_{holdings_id}.json`: A JSON file containing the Alma item data for the collection. This file is used as a data source for the script if the `--use_cache` flag is set.
 
 The first two of these files are important for evaluating the script output. The log file ends with a summary statement describing the total number of Alma and ArchivesSpace records processed, the number of matches and non-matches, and the number of items with duplicate keys. If more than 80% of the items from each source are matched, the configuration profile is likely correct and the data is clean enough to run the script in the production environment.
 
@@ -203,7 +203,7 @@ The unhandled items file contains five types of potential issues:
 
 UCLA has two hosted ArchivesSpace instances: test (https://uclalsc-test.lyrasistechnology.org/) and production (https://uclalsc-staff.lyrasistechnology.org/). 
 
-To use the script to update barcodes in the test or production ArchivesSpace instances, run the script from the support server, `p-u-exlsupport01.library.ucla.edu`, with the appropriate configuration file: `.archivessnake_secret_TEST.yml` for test and `.archivessnake_secret_PROD.yml` for production. Unlike the local setup, the script runs directly on the support server, not in a Docker container.
+To use the script to update barcodes in the test or production ArchivesSpace instances, run it from the support server, `p-u-asrunner01.library.ucla.edu`, using `run_aspace_script.sh`, with the appropriate configuration file: `.archivessnake_secret_TEST.yml` for test and `.archivessnake_secret_PROD.yml` for production. As with the local setup, logs and reports are written to `/logs` and `/output` inside the container.
 Ask a teammate if you need help accessing the support server. 
 
 Alternatively, you can run the script against the test instance from your local machine by setting up a tunneled connection. See the "Connecting to remote instances (UCLA only)" section below for more information. You will need to create a new API configuration file (copy of `.archivessnake.yml`), with an updated `baseurl` of `https://uclalsc-test.lyrasistechnology.org:9000/api` and other credentials as appropriate - ask a teammate if you need these.
@@ -225,7 +225,7 @@ The `add_alma_barcodes_to_archivesspace.py` script includes a utility which can 
 To "undo" barcodes recorded in a log file, use the following CLI flags as additional arguments for a typical command, as described above under *Example Usage*:
 
 1. `--undo_barcoding`: activates the utility
-2. `--use_log` {LOG_FILENAME}: provides the filename for the relevant log file, which should include event messages in the format "Added barcode to top container {TOP_CONTAINER_REF}"
+2. `--use_log` {LOG_PATH}: provides the path to the relevant log file (e.g. `/logs/add_alma_barcodes_to_archivesspace_{timestamp}.log`), which should include event messages in the format "Added barcode to top container {TOP_CONTAINER_REF}"
 
 Note that `--use_log` cannot be used without `--undo_barcoding`. However, if `--undo_barcoding` is used without `--use_log`, the utility will prompt twice for confirmation before deleting all barcodes related to the provided `resource_id`.
 
@@ -282,8 +282,8 @@ This script uses the same matching profiles as the barcoding script. See [Config
 ### Evaluating the script output
 After running the script, you will see the following output files:
 
-- `logs/migrate_alma_metadata_to_archivesspace_{timestamp}.log`: The main log file, ending with a summary of totals, matches, and skipped items.
-- `unhandled_migrate_alma_metadata_to_archivesspace.json`: A JSON file containing any unmatched or duplicate items. Contains the same categories as the barcoding script's unhandled output, except `top_containers_with_barcode` (not applicable here).
+- `/logs/migrate_alma_metadata_to_archivesspace_{timestamp}.log`: The main log file, ending with a summary of totals, matches, and skipped items.
+- `/output/unhandled_migrate_alma_metadata_to_archivesspace.json`: A JSON file containing any unmatched or duplicate items. Contains the same categories as the barcoding script's unhandled output, except `top_containers_with_barcode` (not applicable here).
 
 The log summary also includes counts of containers skipped for location update (non-SRLF items) and container profile update (missing or unrecognized VolEquiv).
 
@@ -335,4 +335,3 @@ ssh -i ~/.ssh/id_aspace_ssh -NT -L \
 ucla-kohler@aspace-hosting-production-bastion.lyrtech.org
 ```
 This tunnel runs in the foreground, so you'll need to open a second connection to run programs which need it.
-
