@@ -24,5 +24,11 @@ USER aspace
 # Copy the rest of the application code to the working directory with aspace as the owner
 COPY --chown=aspace:aspace . .
 
+# Make the working directory writable by any UID, not just aspace's.
+# Some scripts write cache/output files (e.g. alma_data_*.json) directly into
+# this directory at runtime. Making the directory writable by any UID allows the container 
+# to run as a different user (e.g. the host user's UID) without permission issues.
+RUN chmod -R a+rwX .
+
 # Install the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt

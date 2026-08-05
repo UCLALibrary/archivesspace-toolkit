@@ -3,6 +3,9 @@ services:
     image: uclalibrary/archivesspace-toolkit:latest
     container_name: aspace-scripts
     command: sleep infinity
+    user: "${ASPACE_UID}:${ASPACE_GID}"
+    environment:
+      - HOME=/home/aspace
     volumes:
       - ${ASPACE_DATA_DIR}/secrets:/home/aspace/app/secrets
       - ${ASPACE_DATA_DIR}/logs:/home/aspace/app/logs

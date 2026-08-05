@@ -11,6 +11,11 @@ COMPOSE_FILE="docker-compose_scripts.yml"
 export ASPACE_DATA_DIR="${ASPACE_DATA_DIR:-$HOME/aspace-data}"
 mkdir -p "${ASPACE_DATA_DIR}/secrets" "${ASPACE_DATA_DIR}/logs"
 
+# Export the current user's UID and GID for use in the Docker container, 
+# so that files created by the container have the correct ownership on the host system.
+export ASPACE_UID="$(id -u)"
+export ASPACE_GID="$(id -g)"
+
 # Check that the user provided at least one argument (the script name). 
 # If not, print usage information and exit with an error code.
 if [ "$#" -lt 1 ]; then
