@@ -33,8 +33,10 @@ docker compose -f "${COMPOSE_FILE}" exec -T scripts touch "${MARKER}"
 
 # Run the specified Python script inside the container, passing along any additional arguments. 
 # Capture the exit code for later use.
+set +e  # Allow the script to fail without exiting immediately, so we can still copy out files.
 docker compose -f "${COMPOSE_FILE}" exec scripts python "$@"
 EXIT_CODE=$?
+set -e  # Re-enable strict error handling.
 
 # Find anything .json or .log created since the marker was touched, anywhere
 # under the working directory, excluding the two paths that are already
@@ -44,8 +46,7 @@ NEW_FILES=$(docker compose -f "${COMPOSE_FILE}" exec -T scripts bash -c \
     \( -name '*.json' -o -name '*.log' \) \
     -not -path '*/logs/*' -not -path '*/secrets/*'")
 
-# Copy any newly created files back out to the host's data directory, 
-# preserving their relative paths.
+# Copy any newly created files back out to the host's data directory.
 while IFS= read -r f; do
   [ -n "$f" ] && docker compose -f "${COMPOSE_FILE}" cp "scripts:${f}" "${ASPACE_DATA_DIR}/"
 done <<< "${NEW_FILES}"
