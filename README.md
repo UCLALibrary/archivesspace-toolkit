@@ -335,3 +335,44 @@ ssh -i ~/.ssh/id_aspace_ssh -NT -L \
 ucla-kohler@aspace-hosting-production-bastion.lyrtech.org
 ```
 This tunnel runs in the foreground, so you'll need to open a second connection to run programs which need it.
+
+## Running scripts on the support server (UCLA only)
+
+For running scripts against hosted Test/Production ArchivesSpace outside of local development, a stand-alone image is published to Docker Hub as `uclalibrary/archivesspace-toolkit`. This is intended for use on the support server, `p-u-asrunner01.library.ucla.edu`, which is already on the allowed IP list for the hosted systems and doesn't require the tunnel setup described above.
+
+### Setup
+
+1. Pull the image: `docker pull uclalibrary/archivesspace-toolkit:latest`
+2. Copy `docker-compose_scripts.yml` and `run_aspace_script.sh` onto the server, in the same directory, and make sure the script is executable (`chmod +x run_aspace_script.sh`).
+3. By default, config, log, and output files are read from and written to subdirectories under `~/aspace-data` (i.e. within your own home directory on the server). Place your `.archivessnake_secret_*.yml` file(s) (see [API configuration files](#api-configuration-files) above) in `~/aspace-data/secrets/`.
+
+### Usage
+
+Always invoke scripts through the wrapper script, not `docker compose` directly.  The wrapper script sets up the environment and mounts the appropriate directories for config, log, and output files.
+
+```
+./run_aspace_script.sh <script_name.py> [script args...]
+```
+
+For example:
+
+```
+./run_aspace_script.sh migrate_alma_metadata_to_archivesspace.py \
+    --bib_id 9969119863606533 \
+    --holdings_id 22531983170006533 \
+    --resource_id 1415 \
+    --profile config.indicator_type_matching \
+    --config_file secrets/.archivessnake_secret_PROD.yml \
+    --dry_run --print_output
+```
+
+Note two differences from running locally via the dev container:
+- Do not include `python` before the script name - the wrapper adds this automatically.
+- `--config_file` needs a `secrets/` prefix, since config files are mounted into a `secrets/` subdirectory rather than the working directory root.
+
+Log and output files (see [Evaluating the script output](#evaluating-the-script-output) above) appear in `~/aspace-data/logs/` and `~/aspace-data/output/` in real time as the script runs. Use `tail -f ~/aspace-data/logs/*.log` from a second terminal to monitor a run in progress.
+
+### Caveats
+
+- The wrapper script assumes it's being run on `p-u-asrunner01`. Directories default to `~/aspace-data`, i.e. within the invoking user's home directory. Running the wrapper script anywhere else (a laptop, another server) will create an `aspace-data` directory in that machine's home directory instead. To override the location, set `ASPACE_DATA_DIR` before running: `export ASPACE_DATA_DIR=/path/you/want`.
+- `docker-compose_scripts.yml` is intended for running scripts with `run_aspace_script.sh` only, not for running `docker compose` commands directly. The compose file relies on environment variables (`ASPACE_UID`, `ASPACE_GID`, `ASPACE_DATA_DIR`) that `run_aspace_script.sh` sets automatically. Running `docker compose` directly without those set will produce warnings about unset variables and cause the container to run as `root` rather than your own user.
