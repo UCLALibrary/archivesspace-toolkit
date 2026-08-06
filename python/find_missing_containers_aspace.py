@@ -67,7 +67,7 @@ def _get_args() -> argparse.Namespace:
             ".csv"
         ),
         help=(
-            "Filename for the CSV report (written under the shared /output "
+            "Filename for the CSV report (written under the shared output/ "
             "directory; any path component is ignored). "
             "Defaults to 'aspace_missing_containers_<DATETIME>.csv'."
         ),

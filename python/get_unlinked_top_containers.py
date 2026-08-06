@@ -35,8 +35,8 @@ def _get_args() -> argparse.Namespace:
         "-o",
         "--output_file",
         help=(
-            "Filename to write the output to (written under the shared /output "
-            "directory; any path component is ignored). Defaults to "
+            "Filename to write the output to (written under the shared "
+            "output/ directory; any path component is ignored). Defaults to "
             "unlinked_top_containers.txt."
         ),
         required=False,

@@ -8,17 +8,23 @@ from asnake import logging
 from datetime import datetime
 from pathlib import Path
 
-# Shared output directories. These are expected to be mounted as volumes
-# (e.g. via `docker compose`) so that logs, reports, and cache files land
-# in predictable, host-accessible locations regardless of which script
-# or container produced them.
-LOGS_DIR = Path("/logs")
-OUTPUT_DIR = Path("/output")
+# Shared output directories, relative to the current working directory
+# (the script's launch directory — WORKDIR inside the toolkit's containers).
+# These are expected to be mounted as volumes (e.g. via `docker compose`)
+# so that logs, reports, and cache files land in predictable,
+# host-accessible locations regardless of which script produced them.
+LOGS_DIR = Path("logs")
+OUTPUT_DIR = Path("output")
 
 
 def resolve_output_path(filename: str | Path) -> Path:
     """Resolve a filename to a path under the shared OUTPUT_DIR, creating
     the directory if needed.
+
+    Only the filename component of `filename` is used — any directory
+    part supplied by a caller (e.g. a `reports/` prefix or a path from a
+    CLI arg) is discarded, so that all script output consistently lands
+    in OUTPUT_DIR regardless of how it's invoked.
 
     :param str | Path filename: A filename, or a path whose filename
         component should be resolved under OUTPUT_DIR.
