@@ -25,14 +25,10 @@ if [ "$#" -lt 1 ]; then
   exit 1
 fi
 
-# Bring up the Docker container in detached mode, so it runs in the background.
-docker compose -f "${COMPOSE_FILE}" up -d
-
-# Run the specified Python script inside the container, passing along any additional arguments. 
-# Capture the exit code for later use.
-set +e  
-docker compose -f "${COMPOSE_FILE}" exec scripts python "$@"
+# Run the specified Python script in the ArchivesSpace Docker container.
+set +e
+docker compose -f "${COMPOSE_FILE}" run --rm scripts python "$@"
 EXIT_CODE=$?
-set -e 
+set -e
 
 exit "${EXIT_CODE}"

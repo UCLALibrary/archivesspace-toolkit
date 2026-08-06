@@ -1,8 +1,6 @@
 services:
   scripts:
     image: uclalibrary/archivesspace-toolkit:latest
-    container_name: aspace-scripts
-    command: sleep infinity
     user: "${ASPACE_UID}:${ASPACE_GID}"
     environment:
       - HOME=/home/aspace
