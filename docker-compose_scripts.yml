@@ -9,3 +9,4 @@ services:
     volumes:
       - ${ASPACE_DATA_DIR}/secrets:/home/aspace/app/secrets
       - ${ASPACE_DATA_DIR}/logs:/home/aspace/app/logs
+      - ${ASPACE_DATA_DIR}/output:/home/aspace/app/output

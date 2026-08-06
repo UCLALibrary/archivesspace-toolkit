@@ -6,10 +6,12 @@
 set -euo pipefail
 
 # Define the Docker Compose file and data directory for use with ASpace scripts.
-# Create necessary directories for secrets and logs.
-COMPOSE_FILE="docker-compose_scripts.yml"
+# Use dirname and readlink to get the absolute path of the current script's directory,
+# and then append the docker-compose_scripts.yml filename to it.
+COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/docker-compose_scripts.yml"
 export ASPACE_DATA_DIR="${ASPACE_DATA_DIR:-$HOME/aspace-data}"
-mkdir -p "${ASPACE_DATA_DIR}/secrets" "${ASPACE_DATA_DIR}/logs"
+# Create necessary directories for secrets, logs, and output if they don't already exist.
+mkdir -p "${ASPACE_DATA_DIR}/secrets" "${ASPACE_DATA_DIR}/logs" "${ASPACE_DATA_DIR}/output"
 
 # Export the current user's UID and GID for use in the Docker container, 
 # so that files created by the container have the correct ownership on the host system.
@@ -23,35 +25,14 @@ if [ "$#" -lt 1 ]; then
   exit 1
 fi
 
+# Bring up the Docker container in detached mode, so it runs in the background.
 docker compose -f "${COMPOSE_FILE}" up -d
-
-# Create a temporary marker file in the container so we have a timestamp to compare against
-# when looking for newly created files.
-MARKER="/tmp/run_marker_$$"
-# Use 
-docker compose -f "${COMPOSE_FILE}" exec -T scripts touch "${MARKER}"
 
 # Run the specified Python script inside the container, passing along any additional arguments. 
 # Capture the exit code for later use.
-set +e  # Allow the script to fail without exiting immediately, so we can still copy out files.
+set +e  
 docker compose -f "${COMPOSE_FILE}" exec scripts python "$@"
 EXIT_CODE=$?
-set -e  # Re-enable strict error handling.
-
-# Find anything .json or .log created since the marker was touched, anywhere
-# under the working directory, excluding the two paths that are already
-# directly mounted to the host (no need to copy those back out).
-NEW_FILES=$(docker compose -f "${COMPOSE_FILE}" exec -T scripts bash -c \
-  "find /home/aspace/app -type f -newer '${MARKER}' \
-    \( -name '*.json' -o -name '*.log' \) \
-    -not -path '*/logs/*' -not -path '*/secrets/*'")
-
-# Copy any newly created files back out to the host's data directory.
-while IFS= read -r f; do
-  [ -n "$f" ] && docker compose -f "${COMPOSE_FILE}" cp "scripts:${f}" "${ASPACE_DATA_DIR}/"
-done <<< "${NEW_FILES}"
-
-# Clean up the temporary marker file in the container.
-docker compose -f "${COMPOSE_FILE}" exec -T scripts rm -f "${MARKER}"
+set -e 
 
 exit "${EXIT_CODE}"
