@@ -3,7 +3,6 @@ from datetime import datetime
 
 from alma_api_client import AlmaAPIClient
 from asnake.client import ASnakeClient
-from pathlib import Path
 
 from utils import load_config, write_dicts_to_csv
 from utils.alma_utils import get_alma_items_from_alma
@@ -63,13 +62,14 @@ def _get_args() -> argparse.Namespace:
         type=str,
         required=False,
         default=(
-            f"reports/aspace_missing_containers_"
+            f"aspace_missing_containers_"
             f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             ".csv"
         ),
         help=(
-            "Path to write the CSV report. "
-            "Defaults to 'reports/aspace_missing_containers_<DATETIME>.csv'."
+            "Filename for the CSV report (written under the shared output/ "
+            "directory; any path component is ignored). "
+            "Defaults to 'aspace_missing_containers_<DATETIME>.csv'."
         ),
     )
     return parser.parse_args()
@@ -224,7 +224,6 @@ def main() -> None:
     )
 
     # Write the CSV report
-    print(f"Writing CSV report to {args.output_path}")
     rows = _prepare_report_rows(
         unmatched_alma_items,
         args.bib_id,
@@ -232,8 +231,8 @@ def main() -> None:
         aspace_resource_id_human_readable,
         aspace_resource_title,
     )
-    output_path = Path(args.output_path)
-    write_dicts_to_csv(output_path, rows)
+    resolved_output_path = write_dicts_to_csv(args.output_path, rows)
+    print(f"CSV report written to {resolved_output_path}")
 
 
 if __name__ == "__main__":

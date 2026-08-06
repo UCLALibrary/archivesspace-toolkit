@@ -4,6 +4,7 @@ import asnake.logging as logging
 from asnake.client import ASnakeClient
 from pathlib import Path
 from utils import configure_logging, load_config
+from utils.generic_utils import resolve_output_path
 
 # Logger available globally within this module.
 # Configuration is done by configure_logging(), which is called by main().
@@ -33,7 +34,11 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument(
         "-o",
         "--output_file",
-        help="Path to a file to write the output to. Defaults to unlinked_top_containers.txt.",
+        help=(
+            "Filename to write the output to (written under the shared "
+            "output/ directory; any path component is ignored). Defaults to "
+            "unlinked_top_containers.txt."
+        ),
         required=False,
         default="unlinked_top_containers.txt",
     )
@@ -67,10 +72,11 @@ def get_unlinked_top_containers(
             output_list.append(top_container["uri"])
 
     logger.info(f"Total unlinked top containers: {len(output_list)}")
-    with open(output_file, "w") as f:
+    resolved_output_file = resolve_output_path(output_file)
+    with open(resolved_output_file, "w") as f:
         for item in output_list:
             f.write(f"{item}\n")
-    logger.info(f"Output written to {output_file}")
+    logger.info(f"Output written to {resolved_output_file}")
 
 
 def main() -> None:
