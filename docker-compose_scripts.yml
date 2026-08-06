@@ -1,0 +1,10 @@
+services:
+  scripts:
+    image: uclalibrary/archivesspace-toolkit:latest
+    user: "${ASPACE_UID}:${ASPACE_GID}"
+    environment:
+      - HOME=/home/aspace
+    volumes:
+      - ${ASPACE_DATA_DIR}/secrets:/home/aspace/app/secrets
+      - ${ASPACE_DATA_DIR}/logs:/home/aspace/app/logs
+      - ${ASPACE_DATA_DIR}/output:/home/aspace/app/output
