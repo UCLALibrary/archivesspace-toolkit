@@ -158,7 +158,6 @@ def _prepare_alma_missing_report_rows(
                 "Alma Bib ID": alma_bib_id,
                 "Alma Item Barcode": alma_item.get("barcode", ""),
                 "Alma Box Identifier": alma_item.get("description", ""),
-                "Notes": "No matching ASpace top container found — requires review",
             }
         )
     return rows
@@ -183,7 +182,6 @@ def _prepare_aspace_missing_report_rows(
                 "ASpace Top Container Indicator": tc.get("indicator", ""),
                 "Container Type": tc.get("type", ""),
                 "Location": _get_current_location_title(tc),
-                "Notes": "No matching Alma item found — requires review",
             }
         )
     return rows
@@ -289,7 +287,7 @@ def main() -> None:
             aspace_resource_title,
         )
         alma_output_path = write_dicts_to_csv(
-            f"alma_missing_items_{aspace_resource_id_human_readable}_{timestamp}.csv",
+            f"unmatched_alma_items_{aspace_resource_id_human_readable}_{timestamp}.csv",
             alma_rows,
         )
         print(f"Alma-missing-items CSV report written to {alma_output_path}")
@@ -306,7 +304,7 @@ def main() -> None:
             unmatched_aspace_containers, aspace_resource_id_human_readable
         )
         aspace_output_path = write_dicts_to_csv(
-            f"aspace_missing_containers_{aspace_resource_id_human_readable}_{timestamp}.csv",
+            f"unmatched_aspace_containers_{aspace_resource_id_human_readable}_{timestamp}.csv",
             aspace_rows,
         )
         print(f"ASpace-missing-containers CSV report written to {aspace_output_path}")
