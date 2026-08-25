@@ -7,7 +7,10 @@ from asnake.client import ASnakeClient
 
 from utils import configure_logging, load_config, write_dicts_to_csv
 from utils.alma_utils import get_alma_items_from_alma
-from utils.aspace_utils import get_container_refs_from_db
+from utils.aspace_utils import (
+    get_ao_refs_for_top_container_from_db,
+    get_container_refs_from_db,
+)
 
 from config.base_match import match_containers
 from config.indicator_type_matching import get_aspace_match_data, get_alma_match_data
@@ -112,6 +115,41 @@ def _get_current_location_title(top_container: dict) -> str:
     return ""
 
 
+def _get_top_container_id(top_container: dict) -> int | None:
+    """Extract the numeric top container ID from its URI.
+
+    :param dict top_container: A top container dict.
+    :return int | None: The top container's numeric ID, or None if one
+        can't be parsed from its URI.
+    """
+    uri = top_container.get("uri", "")
+    try:
+        return int(uri.rstrip("/").rsplit("/", 1)[-1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _get_linked_ao_refs(top_container: dict, db_config: dict) -> str:
+    """Return a semicolon-separated list of archival object refs linked to
+    the given top container, via a DB query.
+
+    :param dict top_container: A top container dict.
+    :param dict db_config: DB connection settings.
+    :return str: Semicolon-separated archival object refs, or "" if the
+        top container's ID couldn't be determined or it has no linked
+        archival objects.
+    """
+    tc_id = _get_top_container_id(top_container)
+    if tc_id is None:
+        print(
+            f"Could not parse top container ID from URI "
+            f"{top_container.get('uri')!r}; leaving linked AOs blank."
+        )
+        return ""
+    ao_refs = get_ao_refs_for_top_container_from_db(db_config, tc_id)
+    return "; ".join(ao_refs)
+
+
 def _get_aspace_resource_info(
     aspace_client: ASnakeClient,
     resource_uri: str,
@@ -166,12 +204,17 @@ def _prepare_alma_missing_report_rows(
 def _prepare_aspace_missing_report_rows(
     unmatched_aspace_containers: list[dict],
     aspace_resource_id_human_readable: str,
+    aspace_resource_title: str,
+    db_config: dict,
 ) -> list[dict]:
     """Prepare CSV row dicts for ASpace top containers with no matching Alma item.
 
     :param list[dict] unmatched_aspace_containers: A list of ASpace top container dicts.
     :param str aspace_resource_id_human_readable: The human readable identifier
     of the ASpace resource (e.g. "LSC--0293").
+    :param str aspace_resource_title: The title of the ASpace resource.
+    :param dict db_config: DB connection settings, used to look up each top
+        container's linked archival objects.
     :return list[dict]: A list of CSV row dictionaries.
     """
     rows: list[dict] = []
@@ -179,9 +222,11 @@ def _prepare_aspace_missing_report_rows(
         rows.append(
             {
                 "Collection ID": aspace_resource_id_human_readable,
+                "ASpace Collection Title": aspace_resource_title,
                 "ASpace Top Container Indicator": tc.get("indicator", ""),
                 "Container Type": tc.get("type", ""),
                 "Location": _get_current_location_title(tc),
+                "Linked Archival Objects": _get_linked_ao_refs(tc, db_config),
             }
         )
     return rows
@@ -301,7 +346,10 @@ def main() -> None:
             f"a matching Alma item ({len(duplicate_aspace_containers)} due to duplicate keys)."
         )
         aspace_rows = _prepare_aspace_missing_report_rows(
-            unmatched_aspace_containers, aspace_resource_id_human_readable
+            unmatched_aspace_containers,
+            aspace_resource_id_human_readable,
+            aspace_resource_title,
+            db_config,
         )
         aspace_output_path = write_dicts_to_csv(
             f"unmatched_aspace_containers_{aspace_resource_id_human_readable}_{timestamp}.csv",
