@@ -20,9 +20,7 @@ from config import (
 )
 
 # Each profile module exposes get_aspace_match_data() and get_alma_match_data()
-# with the same signature, so swapping profiles is just a matter of which
-# module we call — see the docstring on --match_profile below for what each
-# one does differently.
+# with the same signature, so we can call them generically in the main program.
 MATCH_PROFILES = {
     "indicator_type": indicator_type_matching,
     "indicator_only": indicator_only_matching,
@@ -129,12 +127,6 @@ def _get_all_top_containers_for_resource(
 def _get_current_location_title(top_container: dict) -> str:
     """Return the title of the top container's current location, if any.
 
-    Only considers container_locations entries with status "current" — a top
-    container can have location history, and past locations aren't relevant
-    to this report. Requires the top container to have been fetched with
-    resolve[]=container_locations; falls back to "" if a location isn't
-    resolved or isn't present.
-
     :param dict top_container: A top container dict.
     :return str: The current location's title, or "" if none is listed.
     """
@@ -191,8 +183,8 @@ def _resolve_duplicate_container(
 
     `indicator_type_matching` returns full dicts for duplicates. Other
     profiles (`indicator_only_matching`, `series_description_matching`)
-    return identifying tuples whose first element is the container's URI —
-    this looks the full record back up from the originally fetched
+    return identifying tuples whose first element is the container's URI.
+    This looks the full record back up from the originally fetched
     containers so downstream report-building code only has to handle dicts.
 
     :param dict | tuple duplicate: A duplicate entry as returned by the
@@ -308,19 +300,6 @@ def _prepare_aspace_missing_report_rows(
 
 
 def main() -> None:
-    """For a given LSC collection, produce two CSV reports:
-    - Alma items with no matching ArchivesSpace top container (formerly the
-      sole output of DLSR-305's find_missing_containers_aspace.py)
-    - ArchivesSpace top containers with no matching Alma item
-
-    Collections are identified by ASpace resource ID and Alma bib and
-    holdings IDs. Matching is performed using the config profile selected
-    via --match_profile (indicator_type by default). Top containers/items
-    whose normalized key collides with another top container/item within
-    the same collection are excluded from matching and are reported as
-    "missing" on their respective side, since a collision means neither
-    can be reliably matched.
-    """
     args = _get_args()
     config = load_config(args.config_file)
 
@@ -395,7 +374,7 @@ def main() -> None:
     )
 
     # Items/containers with duplicate keys were excluded from matching entirely
-    # (see indicator_type_matching.py) — treat them as "missing" on their
+    # (see indicator_type_matching.py). Treat them as "missing" on their
     # respective side rather than silently dropping them from both reports.
     unmatched_alma_items = (
         unhandled_data.get("unmatched_alma_items", []) + duplicate_alma_items

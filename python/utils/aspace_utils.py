@@ -120,14 +120,6 @@ def get_ao_titles_for_top_container_from_db(
     """Return de-duped archival object titles linked to the given top container ID
     via a database query. Filters for published and non-suppressed archival objects.
 
-    NOTE: this uses the archival_object.title column directly. ASpace allows
-    an archival object's title to be blank (relying on dates for display
-    instead), so an AO with no title will contribute an empty string here
-    rather than a computed display label. Flagging this as an assumption
-    worth confirming against real data before relying on it — if blank
-    titles turn out to be common, this may need to fall back to a
-    date-based display string instead.
-
     :param dict db_settings: A dict with DB connection details.
     :param int top_container_id: ASpace top container ID.
     :return: A list of archival object titles.
