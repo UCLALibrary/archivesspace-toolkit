@@ -358,7 +358,9 @@ def main() -> None:
 
     # Normalize duplicate entries to full dicts, since not every profile
     # returns them in that shape (see _resolve_duplicate_container/_item).
-    containers_by_uri = {tc.get("uri"): tc for tc in aspace_top_containers}
+    # Only include containers that have a string `uri` so the mapping
+    # type is `dict[str, dict]` (avoids Pylance reportArgumentType).
+    containers_by_uri: dict[str, dict] = {tc["uri"]: tc for tc in aspace_top_containers}
     items_by_pid = {item.get("pid"): item for item in alma_items}
     duplicate_aspace_containers = [
         _resolve_duplicate_container(dup, containers_by_uri)
