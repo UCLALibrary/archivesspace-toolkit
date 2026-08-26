@@ -113,6 +113,57 @@ def get_ao_refs_for_top_container_from_db(
     return ao_refs
 
 
+def get_ao_titles_for_top_container_from_db(
+    db_settings: dict,
+    top_container_id: int,
+) -> list[str]:
+    """Return de-duped archival object titles linked to the given top container ID
+    via a database query. Filters for published and non-suppressed archival objects.
+
+    NOTE: this uses the archival_object.title column directly. ASpace allows
+    an archival object's title to be blank (relying on dates for display
+    instead), so an AO with no title will contribute an empty string here
+    rather than a computed display label. Flagging this as an assumption
+    worth confirming against real data before relying on it — if blank
+    titles turn out to be common, this may need to fall back to a
+    date-based display string instead.
+
+    :param dict db_settings: A dict with DB connection details.
+    :param int top_container_id: ASpace top container ID.
+    :return: A list of archival object titles.
+    """
+    mysql_client = connect(
+        host=db_settings.get("host"),
+        database=db_settings.get("database"),
+        user=db_settings.get("user"),
+        password=db_settings.get("password"),
+    )
+
+    # Same join structure as `get_ao_refs_for_top_container_from_db`,
+    # selecting title instead of building a ref URI.
+    query = """
+        select distinct
+            ao.title as ao_title
+        from resource r
+        inner join archival_object ao on r.id = ao.root_record_id
+        inner join instance i on ao.id = i.archival_object_id
+        inner join sub_container sc on i.id = sc.instance_id
+        inner join top_container_link_rlshp tclr on sc.id = tclr.sub_container_id
+        inner join top_container tc on tclr.top_container_id = tc.id
+        where tc.id = %s
+        and ao.publish = 1
+        and ao.suppressed = 0
+        order by ao_title
+    """
+
+    cursor = mysql_client.cursor(DictCursor)
+    cursor.execute(query, (top_container_id,))
+    ao_titles = [row["ao_title"] or "" for row in cursor.fetchall()]
+    cursor.close()
+    mysql_client.close()
+    return ao_titles
+
+
 def _get_containers_from_container_refs(
     aspace_client: ASnakeClient, container_refs: set[str]
 ) -> list[dict]:

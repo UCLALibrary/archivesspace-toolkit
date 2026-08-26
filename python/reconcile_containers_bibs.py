@@ -8,12 +8,26 @@ from asnake.client import ASnakeClient
 from utils import configure_logging, load_config, write_dicts_to_csv
 from utils.alma_utils import get_alma_items_from_alma
 from utils.aspace_utils import (
-    get_ao_refs_for_top_container_from_db,
+    get_ao_titles_for_top_container_from_db,
     get_container_refs_from_db,
 )
 
 from config.base_match import match_containers
-from config.indicator_type_matching import get_aspace_match_data, get_alma_match_data
+from config import (
+    indicator_type_matching,
+    indicator_only_matching,
+    series_description_matching,
+)
+
+# Each profile module exposes get_aspace_match_data() and get_alma_match_data()
+# with the same signature, so swapping profiles is just a matter of which
+# module we call — see the docstring on --match_profile below for what each
+# one does differently.
+MATCH_PROFILES = {
+    "indicator_type": indicator_type_matching,
+    "indicator_only": indicator_only_matching,
+    "series_description": series_description_matching,
+}
 
 
 def _get_args() -> argparse.Namespace:
@@ -61,6 +75,23 @@ def _get_args() -> argparse.Namespace:
         type=str,
         required=True,
         help="Alma holdings MMS ID for the same collection.",
+    )
+    parser.add_argument(
+        "--match_profile",
+        type=str,
+        required=False,
+        default="indicator_type",
+        choices=sorted(MATCH_PROFILES.keys()),
+        help=(
+            "Which config profile to use for matching Alma items to ASpace "
+            "top containers. 'indicator_type' (default) matches on "
+            "container indicator + type. 'indicator_only' matches on "
+            "indicator alone. 'series_description' additionally parses a "
+            "series out of the indicator (e.g. 'ABC-123' or '123ABC') and "
+            "requires Alma descriptions in the corresponding "
+            "'ser.<series> <type>.<indicator>' format. See the config/ "
+            "profile modules for exact matching and normalization logic."
+        ),
     )
     return parser.parse_args()
 
@@ -129,15 +160,17 @@ def _get_top_container_id(top_container: dict) -> int | None:
         return None
 
 
-def _get_linked_ao_refs(top_container: dict, db_config: dict) -> str:
-    """Return a semicolon-separated list of archival object refs linked to
-    the given top container, via a DB query.
+def _get_linked_ao_titles(top_container: dict, db_config: dict) -> str:
+    """Return a semicolon-separated list of archival object titles linked
+    to the given top container, via a DB query.
 
     :param dict top_container: A top container dict.
     :param dict db_config: DB connection settings.
-    :return str: Semicolon-separated archival object refs, or "" if the
+    :return str: Semicolon-separated archival object titles, or "" if the
         top container's ID couldn't be determined or it has no linked
-        archival objects.
+        archival objects. Individual titles may themselves be "" if the
+        underlying archival object has a blank title (see
+        get_ao_titles_for_top_container_from_db).
     """
     tc_id = _get_top_container_id(top_container)
     if tc_id is None:
@@ -146,8 +179,50 @@ def _get_linked_ao_refs(top_container: dict, db_config: dict) -> str:
             f"{top_container.get('uri')!r}; leaving linked AOs blank."
         )
         return ""
-    ao_refs = get_ao_refs_for_top_container_from_db(db_config, tc_id)
-    return "; ".join(ao_refs)
+    ao_titles = get_ao_titles_for_top_container_from_db(db_config, tc_id)
+    return "; ".join(ao_titles)
+
+
+def _resolve_duplicate_container(
+    duplicate: dict | tuple, containers_by_uri: dict[str, dict]
+) -> dict:
+    """Normalize a duplicate-container entry to a full container dict,
+    regardless of which matching profile produced it.
+
+    `indicator_type_matching` returns full dicts for duplicates. Other
+    profiles (`indicator_only_matching`, `series_description_matching`)
+    return identifying tuples whose first element is the container's URI —
+    this looks the full record back up from the originally fetched
+    containers so downstream report-building code only has to handle dicts.
+
+    :param dict | tuple duplicate: A duplicate entry as returned by the
+        active profile's get_aspace_match_data().
+    :param dict[str, dict] containers_by_uri: Lookup of all fetched
+        top containers by URI.
+    :return dict: The full container dict, or a minimal stand-in dict
+        with just the URI if it can't be found.
+    """
+    if isinstance(duplicate, dict):
+        return duplicate
+    uri = duplicate[0]
+    return containers_by_uri.get(uri, {"uri": uri})
+
+
+def _resolve_duplicate_item(duplicate: dict | tuple, items_by_pid: dict) -> dict:
+    """Normalize a duplicate-item entry to a full Alma item dict,
+    regardless of which matching profile produced it. See
+    `_resolve_duplicate_container` for why this is needed.
+
+    :param dict | tuple duplicate: A duplicate entry as returned by the
+        active profile's get_alma_match_data().
+    :param dict items_by_pid: Lookup of all fetched Alma items by pid.
+    :return dict: The full item dict, or a minimal stand-in dict with
+        just the pid if it can't be found.
+    """
+    if isinstance(duplicate, dict):
+        return duplicate
+    pid = duplicate[0]
+    return items_by_pid.get(pid, {"pid": pid})
 
 
 def _get_aspace_resource_info(
@@ -226,7 +301,7 @@ def _prepare_aspace_missing_report_rows(
                 "ASpace Top Container Indicator": tc.get("indicator", ""),
                 "Container Type": tc.get("type", ""),
                 "Location": _get_current_location_title(tc),
-                "Linked Archival Objects": _get_linked_ao_refs(tc, db_config),
+                "Linked Archival Objects": _get_linked_ao_titles(tc, db_config),
             }
         )
     return rows
@@ -239,10 +314,12 @@ def main() -> None:
     - ArchivesSpace top containers with no matching Alma item
 
     Collections are identified by ASpace resource ID and Alma bib and
-    holdings IDs. Top containers/items whose normalized (indicator, type)
-    key collides with another top container/item within the same collection
-    are excluded from matching and are reported as "missing" on their
-    respective side, since a collision means neither can be reliably matched.
+    holdings IDs. Matching is performed using the config profile selected
+    via --match_profile (indicator_type by default). Top containers/items
+    whose normalized key collides with another top container/item within
+    the same collection are excluded from matching and are reported as
+    "missing" on their respective side, since a collision means neither
+    can be reliably matched.
     """
     args = _get_args()
     config = load_config(args.config_file)
@@ -265,7 +342,8 @@ def main() -> None:
         f"Running container/item reconciliation for "
         f"ASpace resource ID: {args.resource_id}, "
         f"Alma Bib ID: {args.bib_id}, "
-        f"Alma Holdings ID: {args.holdings_id}"
+        f"Alma Holdings ID: {args.holdings_id}, "
+        f"using match profile: {args.match_profile}"
     )
 
     # Get all top containers for the given collection from ASpace
@@ -282,8 +360,9 @@ def main() -> None:
     aspace_resource_id_human_readable, aspace_resource_title = (
         _get_aspace_resource_info(aspace_client, aspace_resource_uri)
     )
-    aspace_match_data, duplicate_aspace_containers = get_aspace_match_data(
-        aspace_top_containers, logger=logger
+    match_profile = MATCH_PROFILES[args.match_profile]
+    aspace_match_data, raw_duplicate_aspace_containers = (
+        match_profile.get_aspace_match_data(aspace_top_containers, logger=logger)
     )
 
     # Now get all items for the given collection from Alma
@@ -294,9 +373,21 @@ def main() -> None:
         f"Fetched {len(alma_items)} "
         f"item{'s' if len(alma_items) > 1 else ''} from Alma"
     )
-    alma_match_data, duplicate_alma_items = get_alma_match_data(
+    alma_match_data, raw_duplicate_alma_items = match_profile.get_alma_match_data(
         alma_items, logger=logger
     )
+
+    # Normalize duplicate entries to full dicts, since not every profile
+    # returns them in that shape (see _resolve_duplicate_container/_item).
+    containers_by_uri = {tc.get("uri"): tc for tc in aspace_top_containers}
+    items_by_pid = {item.get("pid"): item for item in alma_items}
+    duplicate_aspace_containers = [
+        _resolve_duplicate_container(dup, containers_by_uri)
+        for dup in raw_duplicate_aspace_containers
+    ]
+    duplicate_alma_items = [
+        _resolve_duplicate_item(dup, items_by_pid) for dup in raw_duplicate_alma_items
+    ]
 
     # Match in both directions at once
     _, unhandled_data = match_containers(
