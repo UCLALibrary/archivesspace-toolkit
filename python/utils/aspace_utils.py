@@ -176,6 +176,92 @@ def _get_containers_from_container_refs(
     return containers
 
 
+def get_resource_by_uri(aspace_client: ASnakeClient, uri: str) -> dict | None:
+    """Fetch a full ASpace resource record by its URI (ref), e.g.
+    "/repositories/2/resources/123".
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param str uri: The resource's ASpace URI.
+    :return: Full resource dict, or None if the URI could not be resolved.
+    """
+    response = aspace_client.get(uri)
+    if response.status_code != 200:
+        return None
+    return response.json()
+
+
+def update_external_ids(
+    resource: dict,
+    ids_to_set: dict[str, str],
+    sources_to_remove: set[str],
+) -> list[dict]:
+    """Update a resource's repeatable external_ids subrecord in place.
+
+    For each source in ids_to_set: adds a new external_id entry if no entry with
+    that source exists yet, or updates the value in place if one does (so the
+    same source is never duplicated on re-run). Any existing entry whose source
+    is in sources_to_remove is dropped. Entries with any other source are left
+    untouched.
+
+    Mutates resource in place. Returns a list of change records for logging,
+    each a dict with keys: source, action ("added" | "updated" | "removed"),
+    before, after.
+
+    :param dict resource: ASpace resource dict to update.
+    :param dict[str, str] ids_to_set: Mapping of source -> external_id value to
+        add or update.
+    :param set[str] sources_to_remove: Source values whose entries should be
+        removed entirely.
+    :return: List of change record dicts describing what was added/updated/removed.
+    """
+    external_ids = resource.get("external_ids", [])
+    by_source = {eid.get("source"): eid for eid in external_ids}
+    changes: list[dict] = []
+
+    for source, value in ids_to_set.items():
+        existing = by_source.get(source)
+        if existing is None:
+            external_ids.append(
+                {
+                    "jsonmodel_type": "external_id",
+                    "source": source,
+                    "external_id": value,
+                }
+            )
+            changes.append(
+                {"source": source, "action": "added", "before": None, "after": value}
+            )
+        elif existing.get("external_id") != value:
+            before = existing.get("external_id")
+            existing["external_id"] = value
+            changes.append(
+                {
+                    "source": source,
+                    "action": "updated",
+                    "before": before,
+                    "after": value,
+                }
+            )
+        # else: value already matches, nothing to do.
+
+    kept_ids = []
+    for eid in external_ids:
+        if eid.get("source") in sources_to_remove:
+            changes.append(
+                {
+                    "source": eid.get("source"),
+                    "action": "removed",
+                    "before": eid.get("external_id"),
+                    "after": None,
+                }
+            )
+        else:
+            kept_ids.append(eid)
+    resource["external_ids"] = kept_ids
+
+    return changes
+
+
 def get_aspace_containers(
     aspace_client: ASnakeClient,
     repo_id: int,
