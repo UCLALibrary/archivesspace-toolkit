@@ -198,10 +198,9 @@ def update_external_ids(
     """Update a resource's repeatable external_ids subrecord in place.
 
     For each source in ids_to_set: adds a new external_id entry if no entry with
-    that source exists yet, or updates the value in place if one does (so the
-    same source is never duplicated on re-run). Any existing entry whose source
-    is in sources_to_remove is dropped. Entries with any other source are left
-    untouched.
+    that source exists yet, or updates the value in place if one does.
+    Any existing entry whose source is in sources_to_remove is dropped.
+    Entries with any other source are left as-is.
 
     Mutates resource in place. Returns a list of change records for logging,
     each a dict with keys: source, action ("added" | "updated" | "removed"),
