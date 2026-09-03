@@ -258,6 +258,12 @@ def update_external_ids(
             kept_ids.append(eid)
     resource["external_ids"] = kept_ids
 
+    # Add resource identifier and URI to each change record for logging.
+    for change in changes:
+        # Use resource title if available, otherwise fallback to resource ID.
+        change["resource_identifier"] = resource.get("title") or resource.get("id")
+        change["resource_uri"] = resource.get("uri")
+
     return changes
 
 

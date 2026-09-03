@@ -4,6 +4,7 @@ from pathlib import Path
 
 from asnake.client import ASnakeClient
 import asnake.logging as logging
+from dataclasses import dataclass, field
 
 from utils import configure_logging, load_config
 from utils.aspace_utils import get_resource_by_uri, update_external_ids
@@ -24,6 +25,13 @@ CSV_NAME_COL = "Name"
 CSV_URI_COL = "ASpace URI"
 CSV_MMS_ID_COL = "MMS ID"
 CSV_OCLC_COL = "OCLC ID"
+
+
+@dataclass
+class RowResult:
+    error_message: str | None
+    changes: list[dict[str, str | None]] = field(default_factory=list)
+    row_summary: dict[str, str | None] = field(default_factory=dict)
 
 
 # CLI
@@ -85,9 +93,7 @@ def _read_input_rows(input_csv: str) -> list[dict]:
 # PROCESSING
 
 
-def _process_row(
-    aspace_client: ASnakeClient, row: dict, dry_run: bool
-) -> tuple[list[dict], str | None, dict]:
+def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowResult:
     """Process a single input row: fetch the resource by its ASpace URI, apply
     External ID changes, and (unless dry_run) write them back to ArchivesSpace.
 
@@ -99,10 +105,10 @@ def _process_row(
         resource needed no changes. The row summary is always populated (even
         on error/skip) so callers can report on it either way.
     """
-    name = (row.get(CSV_NAME_COL) or "").strip()
-    uri = (row.get(CSV_URI_COL) or "").strip()
-    mms_id = (row.get(CSV_MMS_ID_COL) or "").strip()
-    oclc_number = (row.get(CSV_OCLC_COL) or "").strip()
+    name = row.get(CSV_NAME_COL, "").strip()
+    uri = row.get(CSV_URI_COL, "").strip()
+    mms_id = row.get(CSV_MMS_ID_COL, "").strip()
+    oclc_number = row.get(CSV_OCLC_COL, "").strip()
 
     # Use the URI as the identifying label in messages when Name is blank,
     # since URI is the one field we can't proceed without.
@@ -116,28 +122,32 @@ def _process_row(
     }
 
     if not uri:
-        return [], f"Row '{identifier}' has no ASpace URI; skipping", row_summary
+        return RowResult(
+            error_message=f"Row '{identifier}' has no ASpace URI; skipping",
+            changes=[],
+            row_summary=row_summary,
+        )
+        # return [], f"Row '{identifier}' has no ASpace URI; skipping", row_summary
 
     resource = get_resource_by_uri(aspace_client, uri)
     if resource is None:
-        return (
-            [],
-            f"Could not fetch ASpace resource at '{uri}' (row '{identifier}')",
-            row_summary,
+        return RowResult(
+            error_message=f"Could not fetch ASpace resource at '{uri}' (row '{identifier}')",
+            changes=[],
+            row_summary=row_summary,
         )
-
     ids_to_set = {}
     if mms_id:
         ids_to_set[ILS_SOURCE] = mms_id
     else:
         logger.warning(
-            f"No MMS ID for resource '{identifier}'; leaving ILS External ID as-is"
+            f"No MMS ID provided for resource '{identifier}'; leaving ILS External ID as-is"
         )
     if oclc_number:
         ids_to_set[OCLC_SOURCE] = oclc_number
     else:
         logger.warning(
-            f"No OCLC number for resource '{identifier}'; leaving OCLC External ID as-is"
+            f"No OCLC number provided for resource '{identifier}'; leaving OCLC External ID as-is"
         )
 
     changes = update_external_ids(
@@ -148,53 +158,68 @@ def _process_row(
         logger.info(
             f"No External ID changes needed for '{identifier}' ({resource['uri']})"
         )
-        return [], None, row_summary
+        return RowResult(
+            error_message=None,
+            changes=[],
+            row_summary=row_summary,
+        )
 
     for change in changes:
         logger.info(
             f"'{identifier}' ({resource['uri']}): {change['action']} "
             f"External ID [{change['source']}]: {change['before']!r} -> {change['after']!r}"
         )
-        change["resource_identifier"] = identifier
-        change["resource_uri"] = resource["uri"]
 
     if dry_run:
-        return changes, None, row_summary
+        return RowResult(
+            error_message=None,
+            changes=changes,
+            row_summary=row_summary,
+        )
 
     response = aspace_client.post(resource["uri"], json=resource)
     if response.status_code == 200:
         logger.info(f"Updated resource {resource['uri']}")
-        return changes, None, row_summary
+        return RowResult(
+            error_message=None,
+            changes=changes,
+            row_summary=row_summary,
+        )
     error = f"Failed to update resource {resource['uri']}: {response.status_code} {response.text}"
     logger.error(error)
-    return changes, error, row_summary
+    return RowResult(
+        error_message=error,
+        changes=changes,
+        row_summary=row_summary,
+    )
 
 
 # REPORTING
 
 
 def _print_summary(
-    total_rows: int,
-    changes: list[dict],
-    unchanged_rows: list[dict],
-    errors: list[str],
+    all_results: list[RowResult],
     print_output: bool,
 ) -> None:
     """Log a run summary and optionally print it to the console.
 
-    :param int total_rows: Total input rows processed.
-    :param list[dict] changes: All change records written (or that would be
-        written, in a dry run).
-    :param list[dict] unchanged_rows: Row summaries for resources that needed
-        no changes (already up to date).
-    :param list[str] errors: Error/skip messages encountered.
-    :param bool print_output: If True, also print to console.
+    :param list all_results: List of RowResult objects from processing all rows.
+    :param bool print_output: If True, also print the summary to the console.
     """
-    resources_changed = len({c["resource_uri"] for c in changes})
+    all_changes = [c for result in all_results for c in result.changes]
+    resources_changed = len({c["resource_uri"] for c in all_changes})
+    total_rows = len(all_results)
+    unchanged_rows = [
+        result.row_summary
+        for result in all_results
+        if not result.changes and not result.error_message
+    ]
+    errors = [result.error_message for result in all_results if result.error_message]
+
     summary_lines = [
         f"Total input rows: {total_rows}",
         f"Resources with External ID changes: {resources_changed}",
-        f"Total External ID changes (added/updated/removed): {len(changes)}",
+        f"Total External ID changes (added/updated/removed): {len(all_changes)}",
         f"Resources already up to date (no changes needed): {len(unchanged_rows)}",
         f"Errors/skipped rows: {len(errors)}",
     ]
@@ -222,28 +247,31 @@ def main() -> None:
     rows = _read_input_rows(args.input_csv)
     logger.info(f"Read {len(rows)} rows from {args.input_csv}")
 
-    all_changes: list[dict] = []
+    all_results: list[RowResult] = []
     unchanged_rows: list[dict] = []
     errors: list[str] = []
 
     for row in rows:
-        changes, error, row_summary = _process_row(aspace_client, row, args.dry_run)
-        all_changes.extend(changes)
-        if error:
-            errors.append(error)
-            logger.error(error)
-        elif not changes:
-            unchanged_rows.append(row_summary)
+        result = _process_row(aspace_client, row, args.dry_run)
+        all_results.append(result)
+        if result.error_message:
+            # Error was already logged in _process_row,
+            # but we also want to keep track of it for the summary and CSV error report.
+            errors.append(result.error_message)
+        elif not result.changes:
+            unchanged_rows.append(result.row_summary)
 
     if args.dry_run:
         logger.info(
-            f"Dry run: no changes written. Would have made {len(all_changes)} "
-            f"External ID changes across "
-            f"{len({c['resource_uri'] for c in all_changes})} resources."
+            f"Dry run: no changes written. Would have made "
+            f"{sum(len(result.changes) for result in all_results)} External ID changes across "
+            f"{len({c['resource_uri'] for result in all_results for c in result.changes})} "
+            f"resources."
         )
 
-    _print_summary(len(rows), all_changes, unchanged_rows, errors, args.print_output)
+    _print_summary(all_results, args.print_output)
 
+    all_changes = [c for result in all_results for c in result.changes]
     if all_changes:
         report_path = write_dicts_to_csv(
             f"changes_{logging_filename_base}.csv", all_changes
