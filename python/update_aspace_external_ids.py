@@ -31,7 +31,7 @@ CSV_OCLC_COL = "OCLC ID"
 class RowResult:
     error_message: str | None
     changes: list[dict[str, str | None]] = field(default_factory=list)
-    row_summary: dict[str, str | None] = field(default_factory=dict)
+    row_summary: dict[str, str] = field(default_factory=dict)
 
 
 # CLI
