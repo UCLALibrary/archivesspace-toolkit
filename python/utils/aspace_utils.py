@@ -211,7 +211,8 @@ def update_external_ids(
         add or update.
     :param set[str] sources_to_remove: Source values whose entries should be
         removed entirely.
-    :return: List of change record dicts describing what was added/updated/removed.
+    :return: List of change record dicts describing what was added/updated/removed,
+        including the resource identifier and URI for logging.
     """
     external_ids = resource.get("external_ids", [])
     by_source = {eid.get("source"): eid for eid in external_ids}
@@ -260,8 +261,8 @@ def update_external_ids(
 
     # Add resource identifier and URI to each change record for logging.
     for change in changes:
-        # Use resource title if available, otherwise fallback to resource ID.
-        change["resource_identifier"] = resource.get("title") or resource.get("id")
+        # Use resource title if available, otherwise fallback to URI.
+        change["resource_identifier"] = resource.get("title") or resource.get("uri")
         change["resource_uri"] = resource.get("uri")
 
     return changes

@@ -100,10 +100,7 @@ def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowRe
     :param ASnakeClient aspace_client: ASnakeClient instance.
     :param dict row: A single row dict from the input CSV.
     :param bool dry_run: If True, do not write changes to ArchivesSpace.
-    :return: Tuple of (list of change record dicts, error message or None,
-        row summary dict). An empty change list with no error means the
-        resource needed no changes. The row summary is always populated (even
-        on error/skip) so callers can report on it either way.
+    :return: RowResult object containing any changes made and/or error messages.
     """
     name = row.get(CSV_NAME_COL, "").strip()
     uri = row.get(CSV_URI_COL, "").strip()
@@ -127,7 +124,6 @@ def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowRe
             changes=[],
             row_summary=row_summary,
         )
-        # return [], f"Row '{identifier}' has no ASpace URI; skipping", row_summary
 
     resource = get_resource_by_uri(aspace_client, uri)
     if resource is None:
@@ -229,6 +225,42 @@ def _print_summary(
             print(line)
 
 
+def _write_result_csvs(
+    all_results: list[RowResult],
+    logging_filename_base: str,
+) -> None:
+    """Write CSV reports for changes, unchanged rows, and errors.
+
+    :param list all_results: List of RowResult objects from processing all rows.
+    :param str logging_filename_base: Base name for the log file (used to name CSVs).
+    """
+    all_changes = [c for result in all_results for c in result.changes]
+    if all_changes:
+        report_path = write_dicts_to_csv(
+            f"changes_{logging_filename_base}.csv", all_changes
+        )
+        logger.info(f"Change report written to {report_path}")
+
+    unchanged_rows = [
+        result.row_summary
+        for result in all_results
+        if not result.changes and not result.error_message
+    ]
+    if unchanged_rows:
+        unchanged_path = write_dicts_to_csv(
+            f"no_updates_needed_{logging_filename_base}.csv", unchanged_rows
+        )
+        logger.info(f"No-updates-needed report written to {unchanged_path}")
+
+    errors = [result.error_message for result in all_results if result.error_message]
+    if errors:
+        error_rows = [{"error": e} for e in errors]
+        error_path = write_dicts_to_csv(
+            f"errors_{logging_filename_base}.csv", error_rows
+        )
+        logger.info(f"Error report written to {error_path}")
+
+
 # MAIN
 
 
@@ -248,18 +280,10 @@ def main() -> None:
     logger.info(f"Read {len(rows)} rows from {args.input_csv}")
 
     all_results: list[RowResult] = []
-    unchanged_rows: list[dict] = []
-    errors: list[str] = []
 
     for row in rows:
         result = _process_row(aspace_client, row, args.dry_run)
         all_results.append(result)
-        if result.error_message:
-            # Error was already logged in _process_row,
-            # but we also want to keep track of it for the summary and CSV error report.
-            errors.append(result.error_message)
-        elif not result.changes:
-            unchanged_rows.append(result.row_summary)
 
     if args.dry_run:
         logger.info(
@@ -270,26 +294,7 @@ def main() -> None:
         )
 
     _print_summary(all_results, args.print_output)
-
-    all_changes = [c for result in all_results for c in result.changes]
-    if all_changes:
-        report_path = write_dicts_to_csv(
-            f"changes_{logging_filename_base}.csv", all_changes
-        )
-        logger.info(f"Change report written to {report_path}")
-
-    if unchanged_rows:
-        unchanged_path = write_dicts_to_csv(
-            f"no_updates_needed_{logging_filename_base}.csv", unchanged_rows
-        )
-        logger.info(f"No-updates-needed report written to {unchanged_path}")
-
-    if errors:
-        error_rows = [{"error": e} for e in errors]
-        error_path = write_dicts_to_csv(
-            f"errors_{logging_filename_base}.csv", error_rows
-        )
-        logger.info(f"Error report written to {error_path}")
+    _write_result_csvs(all_results, logging_filename_base)
 
 
 if __name__ == "__main__":

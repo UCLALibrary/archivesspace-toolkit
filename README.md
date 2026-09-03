@@ -290,6 +290,22 @@ The log summary also includes counts of containers skipped for location update (
 ### Running the migration script against hosted ArchivesSpace (Test and Production)
 The process is the same as for the barcoding script. See [Updating barcodes in hosted ArchivesSpace (Test and Production)](#updating-barcodes-in-hosted-archivesspace-test-and-production) above.
 
+## Updating External IDs for ArchivesSpace Resources
+The script `update_aspace_external_ids.py` is used to update the External ID field for ArchivesSpace resources in bulk. The script removes any existing Archivists Toolkit external IDs (values with source "Archivists Toolkit Database::RESOURCE") and adds new MMS ID (Alma bib ID) and OCLC identifiers based on an input CSV file. 
+
+The script takes the following required arguments:
+- `--config_file`: A YAML file containing configuration information, as described in the "API configuration files" section above
+- `--input_csv`: A CSV file containing mappings between ArchivesSpace resource IDs and new external IDs. The CSV file should have the following columns: `Name`, `ASpace URI`, `MMS ID`, `OCLC ID`.
+
+The script also takes the following optional arguments:
+- `--dry_run`: If set, the script will not make any changes to ArchivesSpace.
+- `--print_output`: If set, the script will print summary info to the console in addition to writing it to the log file.
+
+The script produces a log file in `logs/` and up to three output files in `output/`:
+- `output/changes_update_aspace_external_ids.csv`: A CSV file containing the changes made to ArchivesSpace resources, including the resource ID, old external IDs, and new external IDs.
+- `output/no_updates_needed_update_aspace_external_ids.csv`: A CSV file containing resources that already had the correct external IDs and did not need to be updated.
+- `output/errors_update_aspace_external_ids.csv`: A CSV file containing any errors encountered during the update process, including resources that could not be found or updated.
+
 ## Rebuilding Solr Index
 
 TBD - all I know for now is this is a long-running process (14 hours so far....)
