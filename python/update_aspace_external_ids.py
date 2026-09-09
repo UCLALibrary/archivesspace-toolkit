@@ -31,7 +31,7 @@ CSV_OCLC_COL = "OCLC ID"
 class RowResult:
     error_message: str | None
     changes: list[dict[str, str | None]] = field(default_factory=list)
-    row_summary: dict[str, str] = field(default_factory=dict)
+    row_summary: dict[str, str | None] = field(default_factory=dict)
 
 
 # CLI
@@ -51,7 +51,8 @@ def _get_args() -> argparse.Namespace:
         help=(
             f"Path to input CSV (as_oclc_mms.csv) with columns "
             f"'{CSV_NAME_COL}', '{CSV_URI_COL}', '{CSV_MMS_ID_COL}', '{CSV_OCLC_COL}' "
-            "(other columns are ignored)"
+            "(other columns are ignored). A resource may appear on more than "
+            "one row if it should receive more than one MMS ID and/or OCLC ID."
         ),
     )
     parser.add_argument("--config_file", required=True, help="Path to config YAML")
@@ -97,6 +98,10 @@ def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowRe
     """Process a single input row: fetch the resource by its ASpace URI, apply
     External ID changes, and (unless dry_run) write them back to ArchivesSpace.
 
+    A resource may appear in more than one row (to receive more than one MMS
+    ID and/or OCLC ID); each row's values are added if not already present,
+    without disturbing values added by other rows for the same resource.
+
     :param ASnakeClient aspace_client: ASnakeClient instance.
     :param dict row: A single row dict from the input CSV.
     :param bool dry_run: If True, do not write changes to ArchivesSpace.
@@ -132,22 +137,25 @@ def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowRe
             changes=[],
             row_summary=row_summary,
         )
-    ids_to_set = {}
+
+    ids_to_add: list[tuple[str, str]] = []
     if mms_id:
-        ids_to_set[ILS_SOURCE] = mms_id
+        ids_to_add.append((ILS_SOURCE, mms_id))
     else:
         logger.warning(
-            f"No MMS ID provided for resource '{identifier}'; leaving ILS External ID as-is"
+            f"No MMS ID provided for resource '{identifier}'; "
+            f"leaving existing ILS External ID(s) as-is"
         )
     if oclc_number:
-        ids_to_set[OCLC_SOURCE] = oclc_number
+        ids_to_add.append((OCLC_SOURCE, oclc_number))
     else:
         logger.warning(
-            f"No OCLC number provided for resource '{identifier}'; leaving OCLC External ID as-is"
+            f"No OCLC number provided for resource '{identifier}'; "
+            f"leaving existing OCLC External ID(s) as-is"
         )
 
     changes = update_external_ids(
-        resource, ids_to_set, sources_to_remove={LEGACY_AT_SOURCE}
+        resource, ids_to_add, sources_to_remove={LEGACY_AT_SOURCE}
     )
 
     if not changes:
@@ -215,7 +223,7 @@ def _print_summary(
     summary_lines = [
         f"Total input rows: {total_rows}",
         f"Resources with External ID changes: {resources_changed}",
-        f"Total External ID changes (added/updated/removed): {len(all_changes)}",
+        f"Total External ID changes (added/removed): {len(all_changes)}",
         f"Resources already up to date (no changes needed): {len(unchanged_rows)}",
         f"Errors/skipped rows: {len(errors)}",
     ]

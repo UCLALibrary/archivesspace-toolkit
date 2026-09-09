@@ -192,58 +192,40 @@ def get_resource_by_uri(aspace_client: ASnakeClient, uri: str) -> dict | None:
 
 def update_external_ids(
     resource: dict,
-    ids_to_set: dict[str, str],
+    ids_to_add: list[tuple[str, str]],
     sources_to_remove: set[str],
 ) -> list[dict]:
     """Update a resource's repeatable external_ids subrecord in place.
 
-    For each source in ids_to_set: adds a new external_id entry if no entry with
-    that source exists yet, or updates the value in place if one does.
-    Any existing entry whose source is in sources_to_remove is dropped.
-    Entries with any other source are left as-is.
+    A resource may legitimately have more than one external_id entry for the
+    same source (e.g. more than one MMS ID or OCLC number linked to a single
+    collection), so entries are matched on the (source, value) pair, not on
+    source alone. For each (source, value) pair in ids_to_add, an entry is
+    appended only if that exact pair doesn't already exist.
+
+    Any existing entry whose source is in sources_to_remove is dropped
+    entirely. Entries with any other source, and any (source, value) pairs
+    already present, are left as-is.
 
     Mutates resource in place. Returns a list of change records for logging,
-    each a dict with keys: source, action ("added" | "updated" | "removed"),
-    before, after.
+    each a dict with keys: source, action ("added" | "removed"), before,
+    after, resource_identifier, resource_uri.
 
     :param dict resource: ASpace resource dict to update.
-    :param dict[str, str] ids_to_set: Mapping of source -> external_id value to
-        add or update.
+    :param list[tuple[str, str]] ids_to_add: (source, external_id value) pairs
+        to ensure are present. May include more than one pair for the same
+        source.
     :param set[str] sources_to_remove: Source values whose entries should be
         removed entirely.
-    :return: List of change record dicts describing what was added/updated/removed,
+    :return: List of change record dicts describing what was added/removed,
         including the resource identifier and URI for logging.
     """
     external_ids = resource.get("external_ids", [])
-    by_source = {eid.get("source"): eid for eid in external_ids}
     changes: list[dict] = []
 
-    for source, value in ids_to_set.items():
-        existing = by_source.get(source)
-        if existing is None:
-            external_ids.append(
-                {
-                    "jsonmodel_type": "external_id",
-                    "source": source,
-                    "external_id": value,
-                }
-            )
-            changes.append(
-                {"source": source, "action": "added", "before": None, "after": value}
-            )
-        elif existing.get("external_id") != value:
-            before = existing.get("external_id")
-            existing["external_id"] = value
-            changes.append(
-                {
-                    "source": source,
-                    "action": "updated",
-                    "before": before,
-                    "after": value,
-                }
-            )
-        # else: value already matches, nothing to do.
-
+    # Drop entries for any source being fully removed (e.g. legacy AT source)
+    # before checking what's already present, so a removed source doesn't
+    # block re-adding a value under a different source.
     kept_ids = []
     for eid in external_ids:
         if eid.get("source") in sources_to_remove:
@@ -257,6 +239,26 @@ def update_external_ids(
             )
         else:
             kept_ids.append(eid)
+
+    existing_pairs = {(eid.get("source"), eid.get("external_id")) for eid in kept_ids}
+
+    for source, value in ids_to_add:
+        if (source, value) in existing_pairs:
+            # Already present (e.g. a second CSV row repeating a pair already
+            # added by an earlier row this run) - nothing to do.
+            continue
+        kept_ids.append(
+            {
+                "jsonmodel_type": "external_id",
+                "source": source,
+                "external_id": value,
+            }
+        )
+        changes.append(
+            {"source": source, "action": "added", "before": None, "after": value}
+        )
+        existing_pairs.add((source, value))
+
     resource["external_ids"] = kept_ids
 
     # Add resource identifier and URI to each change record for logging.
