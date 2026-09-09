@@ -31,7 +31,7 @@ CSV_OCLC_COL = "OCLC ID"
 class RowResult:
     error_message: str | None
     changes: list[dict[str, str | None]] = field(default_factory=list)
-    row_summary: dict[str, str] = field(default_factory=dict)
+    row_summary: dict[str, str | None] = field(default_factory=dict)
 
 
 # CLI
@@ -51,7 +51,8 @@ def _get_args() -> argparse.Namespace:
         help=(
             f"Path to input CSV (as_oclc_mms.csv) with columns "
             f"'{CSV_NAME_COL}', '{CSV_URI_COL}', '{CSV_MMS_ID_COL}', '{CSV_OCLC_COL}' "
-            "(other columns are ignored)"
+            "(other columns are ignored). A resource may appear on more than "
+            "one row if it should receive more than one MMS ID and/or OCLC ID."
         ),
     )
     parser.add_argument("--config_file", required=True, help="Path to config YAML")
@@ -97,6 +98,10 @@ def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowRe
     """Process a single input row: fetch the resource by its ASpace URI, apply
     External ID changes, and (unless dry_run) write them back to ArchivesSpace.
 
+    A resource may appear in more than one row (to receive more than one MMS
+    ID and/or OCLC ID); each row's values are added if not already present,
+    without disturbing values added by other rows for the same resource.
+
     :param ASnakeClient aspace_client: ASnakeClient instance.
     :param dict row: A single row dict from the input CSV.
     :param bool dry_run: If True, do not write changes to ArchivesSpace.
@@ -132,22 +137,25 @@ def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowRe
             changes=[],
             row_summary=row_summary,
         )
-    ids_to_set = {}
+
+    ids_to_add: list[tuple[str, str]] = []
     if mms_id:
-        ids_to_set[ILS_SOURCE] = mms_id
+        ids_to_add.append((ILS_SOURCE, mms_id))
     else:
         logger.warning(
-            f"No MMS ID provided for resource '{identifier}'; leaving ILS External ID as-is"
+            f"No MMS ID provided for resource '{identifier}'; "
+            "leaving existing ILS External ID(s) as-is",
         )
     if oclc_number:
-        ids_to_set[OCLC_SOURCE] = oclc_number
+        ids_to_add.append((OCLC_SOURCE, oclc_number))
     else:
         logger.warning(
-            f"No OCLC number provided for resource '{identifier}'; leaving OCLC External ID as-is"
+            f"No OCLC number provided for resource '{identifier}'; "
+            "leaving existing OCLC External ID(s) as-is",
         )
 
     changes = update_external_ids(
-        resource, ids_to_set, sources_to_remove={LEGACY_AT_SOURCE}
+        resource, ids_to_add, sources_to_remove={LEGACY_AT_SOURCE}
     )
 
     if not changes:
@@ -193,6 +201,55 @@ def _process_row(aspace_client: ASnakeClient, row: dict, dry_run: bool) -> RowRe
 # REPORTING
 
 
+def _resource_uris_with_changes_and_errors(
+    all_results: list[RowResult],
+) -> tuple[set[str], set[str]]:
+    """Helper function for reporting.
+    Return the distinct resource URIs that had at least one change, and the
+    distinct resource URIs that had at least one error, across all rows in
+    this run. A resource may appear in both sets.
+
+    :param list all_results: List of RowResult objects from processing all rows.
+    :return: Tuple of (resource_uris_with_changes, resource_uris_with_errors).
+    """
+    changed = {
+        uri
+        for result in all_results
+        if result.changes
+        for uri in (result.row_summary.get("resource_uri"),)
+        if uri is not None  # will never be None, but type checker doesn't know that
+    }
+    errored = {
+        uri
+        for result in all_results
+        if result.error_message
+        for uri in (result.row_summary.get("resource_uri"),)
+        if uri is not None  # also will never be None
+    }
+    return changed, errored
+
+
+def _fully_unchanged_resource_summaries(all_results: list[RowResult]) -> list[dict]:
+    """Helper function for reporting.
+    Row summaries for resources that were already fully up to date: every
+    row referencing that resource's URI in this run produced no changes and
+    no errors. Returns at most one summary per distinct resource URI.
+
+    :param list all_results: List of RowResult objects from processing all rows.
+    :return: List of row summary dicts, one per fully-unchanged resource.
+    """
+    changed, errored = _resource_uris_with_changes_and_errors(all_results)
+    seen: set[str] = set()
+    summaries = []
+    for result in all_results:
+        uri = result.row_summary.get("resource_uri")
+        if not uri or uri in changed or uri in errored or uri in seen:
+            continue
+        seen.add(uri)
+        summaries.append(result.row_summary)
+    return summaries
+
+
 def _print_summary(
     all_results: list[RowResult],
     print_output: bool,
@@ -203,20 +260,21 @@ def _print_summary(
     :param bool print_output: If True, also print the summary to the console.
     """
     all_changes = [c for result in all_results for c in result.changes]
-    resources_changed = len({c["resource_uri"] for c in all_changes})
-    total_rows = len(all_results)
-    unchanged_rows = [
-        result.row_summary
+    resource_uris_with_changes, _ = _resource_uris_with_changes_and_errors(all_results)
+    distinct_resources = {
+        result.row_summary.get("resource_uri")
         for result in all_results
-        if not result.changes and not result.error_message
-    ]
+        if result.row_summary.get("resource_uri")
+    }
+    fully_unchanged = _fully_unchanged_resource_summaries(all_results)
     errors = [result.error_message for result in all_results if result.error_message]
 
     summary_lines = [
-        f"Total input rows: {total_rows}",
-        f"Resources with External ID changes: {resources_changed}",
-        f"Total External ID changes (added/updated/removed): {len(all_changes)}",
-        f"Resources already up to date (no changes needed): {len(unchanged_rows)}",
+        f"Total input rows: {len(all_results)}",
+        f"Distinct resources referenced: {len(distinct_resources)}",
+        f"Resources with External ID changes: {len(resource_uris_with_changes)}",
+        f"Total External ID changes (added/removed): {len(all_changes)}",
+        f"Resources already up to date (no changes needed): {len(fully_unchanged)}",
         f"Errors/skipped rows: {len(errors)}",
     ]
     for line in summary_lines:
@@ -229,7 +287,7 @@ def _write_result_csvs(
     all_results: list[RowResult],
     logging_filename_base: str,
 ) -> None:
-    """Write CSV reports for changes, unchanged rows, and errors.
+    """Write CSV reports for changes, unchanged resources, and errors.
 
     :param list all_results: List of RowResult objects from processing all rows.
     :param str logging_filename_base: Base name for the log file (used to name CSVs).
@@ -241,14 +299,10 @@ def _write_result_csvs(
         )
         logger.info(f"Change report written to {report_path}")
 
-    unchanged_rows = [
-        result.row_summary
-        for result in all_results
-        if not result.changes and not result.error_message
-    ]
-    if unchanged_rows:
+    fully_unchanged = _fully_unchanged_resource_summaries(all_results)
+    if fully_unchanged:
         unchanged_path = write_dicts_to_csv(
-            f"no_updates_needed_{logging_filename_base}.csv", unchanged_rows
+            f"no_updates_needed_{logging_filename_base}.csv", fully_unchanged
         )
         logger.info(f"No-updates-needed report written to {unchanged_path}")
 
