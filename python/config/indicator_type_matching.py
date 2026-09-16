@@ -19,10 +19,20 @@ def get_aspace_match_data(
     """
     match_data: dict[tuple, dict] = {}
     duplicate_containers: list[dict] = []
+    # Keys already known to be duplicated, so a 3rd+ container with the key is excluded too.
+    duplicate_keys: set[tuple] = set()
     for tc in aspace_containers:
         tc_indicator = tc.get("indicator")
         tc_type = tc.get("type")
         key = (tc_indicator, tc_type)
+        if key in duplicate_keys:
+            if logger:
+                logger.error(
+                    f"Duplicate top container found: {tc_indicator} {tc_type} {tc.get('uri')}."
+                    " Excluding from matching."
+                )
+            duplicate_containers.append(tc)
+            continue
         if key in match_data:
             if logger:
                 logger.error(
@@ -34,6 +44,7 @@ def get_aspace_match_data(
             duplicate_containers.append(match_data[key])
             # remove the duplicate
             del match_data[key]
+            duplicate_keys.add(key)
             # skip this top container
             continue
         match_data[key] = tc
@@ -59,6 +70,7 @@ def get_alma_match_data(
     """
     match_data: dict[tuple, dict] = {}
     duplicate_items: list[dict] = []
+    duplicate_keys: set[tuple] = set()
     for item in alma_items:
         description = item.get("description", "")
         # split description into container type and indicator, e.g. "box.1"
@@ -73,6 +85,14 @@ def get_alma_match_data(
             alma_indicator = alma_indicator[:-11]
 
         key = (alma_indicator, alma_container_type)
+        if key in duplicate_keys:
+            if logger:
+                logger.error(
+                    f"Duplicate Alma description: {key} for item {item.get('pid')}."
+                    " Excluding from matching."
+                )
+            duplicate_items.append(item)
+            continue
         if key in match_data:
             if logger:
                 logger.error(
@@ -85,6 +105,7 @@ def get_alma_match_data(
             duplicate_items.append(match_data[key])
             # remove the duplicate
             del match_data[key]
+            duplicate_keys.add(key)
             # skip this item
             continue
         match_data[key] = item

@@ -12,14 +12,14 @@ def parse_aspace_indicator(tc_indicator_with_series: str) -> tuple[str, str]:
         # if we have no matches or more than one match, indicator is not in the expected format
         if len(parsed_indicators) != 1:
             return "", ""
-        (tc_indicator, tc_series) = parsed_indicators[0]
+        tc_indicator, tc_series = parsed_indicators[0]
 
     # otherwise, format should be XYZ-123
     else:
         parsed_indicators = re.findall(r"(\w+)-(\d+)", tc_indicator_with_series)
         if len(parsed_indicators) != 1:
             return "", ""
-        (tc_series, tc_indicator) = parsed_indicators[0]
+        tc_series, tc_indicator = parsed_indicators[0]
     return tc_indicator, tc_series
 
 
@@ -31,6 +31,8 @@ def get_aspace_match_data(
     containers with duplicate keys."""
     match_data = {}
     tcs_with_duplicate_keys = []
+    # Keys already known to be duplicated, so a 3rd+ container with the key is excluded too.
+    duplicate_keys = set()
     for tc in aspace_containers:
         tc_type = tc.get("type")
         tc_indicator_with_series = tc.get("indicator")
@@ -50,6 +52,18 @@ def get_aspace_match_data(
                     f" {tc_indicator_with_series}."
                 )
             match_data[tc.get("uri")] = tc
+            continue
+
+        elif (tc_indicator, tc_type, tc_series) in duplicate_keys:
+            if logger:
+                logger.error(
+                    f"Duplicate top container found:"
+                    f" {tc_indicator} {tc_type} {tc_series} {tc.get('uri')}."
+                    " Skipping top container."
+                )
+            tcs_with_duplicate_keys.append(
+                (tc.get("uri"), tc_indicator, tc_type, tc_series)
+            )
             continue
 
         # double check for duplicates only if we have a valid indicator and series
@@ -75,6 +89,7 @@ def get_aspace_match_data(
             )
             # remove the duplicate
             del match_data[(tc_indicator, tc_type, tc_series)]
+            duplicate_keys.add((tc_indicator, tc_type, tc_series))
             # skip this top container
             continue
         match_data[(tc_indicator, tc_type, tc_series)] = tc
@@ -91,6 +106,7 @@ def get_alma_match_data(
     """
     match_data = {}
     items_with_duplicate_keys = []
+    duplicate_keys = set()
     for item in alma_items:
         description = item.get("description", "")
         # split description into series and container type/indicator (space and period delimited)
@@ -109,6 +125,16 @@ def get_alma_match_data(
         if alma_indicator.endswith(" RESTRICTED"):
             alma_indicator = alma_indicator.replace(" RESTRICTED", "")
 
+        if (alma_indicator, alma_type, alma_series) in duplicate_keys:
+            if logger:
+                logger.error(
+                    f"Duplicate Alma description: {(alma_indicator, alma_type, alma_series)}"
+                    f" for item {item.get('pid')}. Skipping item."
+                )
+            items_with_duplicate_keys.append(
+                (item.get("pid"), alma_indicator, alma_type, alma_series)
+            )
+            continue
         # check if this will be a duplicate key
         if (alma_indicator, alma_type, alma_series) in match_data:
             current_item_pid = item.get("pid")
@@ -130,6 +156,7 @@ def get_alma_match_data(
             )
             # remove the duplicate
             del match_data[(alma_indicator, alma_type, alma_series)]
+            duplicate_keys.add((alma_indicator, alma_type, alma_series))
             # skip this item
             continue
         match_data[(alma_indicator, alma_type, alma_series)] = item

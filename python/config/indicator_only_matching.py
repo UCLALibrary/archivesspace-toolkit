@@ -7,8 +7,18 @@ def get_aspace_match_data(
     """Parses ASpace top container indicators into a dictionary."""
     match_data = {}
     tcs_with_duplicate_keys = []
+    # Keys already known to be duplicated, so a 3rd+ container with the key is excluded too.
+    duplicate_keys = set()
     for tc in aspace_containers:
         tc_indicator = tc.get("indicator")
+        if tc_indicator in duplicate_keys:
+            if logger:
+                logger.error(
+                    f"Duplicate top container found: {tc_indicator} {tc.get('uri')}."
+                    " Skipping top container."
+                )
+            tcs_with_duplicate_keys.append((tc.get("uri"), tc_indicator))
+            continue
         # double check for duplicates
         if tc_indicator in match_data:
             if logger:
@@ -23,6 +33,7 @@ def get_aspace_match_data(
             )
             # remove the duplicate
             del match_data[(tc_indicator)]
+            duplicate_keys.add(tc_indicator)
             # skip this top container
             continue
         match_data[tc_indicator] = tc
@@ -36,6 +47,7 @@ def get_alma_match_data(
     by removing leading zeroes and " RESTRICTED"."""
     match_data = {}
     items_with_duplicate_keys = []
+    duplicate_keys = set()
     for item in alma_items:
         description = item.get("description", "")
         # split description into container type and indicator, e.g. "box.1"
@@ -49,6 +61,14 @@ def get_alma_match_data(
         if alma_indicator.endswith(" RESTRICTED"):
             alma_indicator = alma_indicator[:-11]
 
+        if alma_indicator in duplicate_keys:
+            if logger:
+                logger.error(
+                    f"Duplicate Alma indicator: {alma_indicator}"
+                    f" for item {item.get('pid')}. Skipping item."
+                )
+            items_with_duplicate_keys.append((item.get("pid"), alma_indicator))
+            continue
         # check if this will be a duplicate key
         if (alma_indicator) in match_data:
             current_item_pid = item.get("pid")
@@ -64,6 +84,7 @@ def get_alma_match_data(
             items_with_duplicate_keys.append((previous_item_pid, alma_indicator))
             # remove the duplicate
             del match_data[alma_indicator]
+            duplicate_keys.add(alma_indicator)
             # skip this item
             continue
         match_data[alma_indicator] = item
