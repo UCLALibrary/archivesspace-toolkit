@@ -153,9 +153,7 @@ def _partition_false_duplicates(
     real_tcs = []
     false_tcs = []
     for tc in tcs:
-        uri = tc.get("uri")
-        # URI should always be present, but type checker doesn't know that.
-        reason = false_duplicates.get(uri) if uri else None
+        reason = false_duplicates.get(tc.get("uri"))
         if reason:
             logger.warning(
                 f"Excluding false duplicate top container {tc.get('uri')} "
@@ -262,14 +260,23 @@ def _print_summary(summary: dict, dry_run: bool) -> None:
             f" {summary['Groups not merged (fewer than 2 real containers)']}"
         ),
     ]
-    # Add additional success/failure info if in production mode
-    if not dry_run:
+    if dry_run:
+        # No merge requests are sent in a dry run, so failures can't occur.
+        lines.append(f"Groups that would be merged: {summary['Successful merges']}")
+    else:
         lines.extend(
             [
                 f"Successful merges: {summary['Successful merges']}",
                 f"Failed merges: {summary['Failed merges']}",
             ]
         )
+    # Containers come from get_container_refs_from_db(), which only returns containers
+    # linked to a published, unsuppressed AO. Say so, since it explains why groups
+    # visible in the staff UI or in a direct database query may not appear here.
+    lines.append(
+        "Note: only top containers linked to at least one published, "
+        "unsuppressed archival object are included."
+    )
     lines.append(f"{'*' * len(lines[0])}")
     for line in lines:
         print(line)
