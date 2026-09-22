@@ -10,7 +10,11 @@ import asnake.logging as logging
 from config.base_match import match_containers
 from utils import configure_logging, load_config, write_to_cache
 from utils.alma_utils import get_alma_items
-from utils.aspace_utils import get_aspace_containers
+from utils.aspace_utils import (
+    exclude_false_duplicates,
+    get_aspace_containers,
+    get_required_db_settings,
+)
 
 # Logger available globally within this module.
 # Configuration is done by configure_logging(), called in main().
@@ -54,7 +58,10 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument(
         "--use_db",
         action="store_true",
-        help="Get ASpace containers from database instead of API",
+        help=(
+            "Get ASpace containers from database instead of API (for large collections). "
+            "Database settings are required either way."
+        ),
     )
     parser.add_argument(
         "--dry_run",
@@ -287,11 +294,142 @@ def _print_summary(
             f"ASpace top containers with duplicate keys: "
             f"{len(unhandled_data.get('tcs_with_duplicate_keys', []))}"
         ),
+        (
+            f"False duplicate top containers excluded: "
+            f"{len(unhandled_data.get('false_duplicate_containers', []))}"
+        ),
+        (
+            f"Top containers skipped (existing barcode differs from Alma): "
+            f"{len(unhandled_data.get('tcs_with_barcode_mismatch', []))}"
+        ),
     ]
     for line in summary_lines:
         logger.info(line)
         if print_output:
             print(line)
+
+
+# MATCHING AND UPDATING (imported into the combined barcode + metadata script)
+
+
+def match_alma_items_to_containers(
+    db_settings: dict,
+    alma_items: list[dict],
+    aspace_containers: list[dict],
+    profile: str,
+) -> tuple[list[dict], dict[str, str | None], dict]:
+    """Excludes false duplicates, then matches Alma items to ASpace top containers
+    using the given profile.
+
+    match_containers() overwrites each matched container's `barcode` with the Alma
+    barcode, so the pre-match barcodes are captured and returned for callers
+    to compare against or restore.
+
+    :param dict db_settings: DB connection settings, used to check for false duplicates.
+    :param list[dict] alma_items: Alma item dicts.
+    :param list[dict] aspace_containers: ASpace top container dicts.
+    :param str profile: Matching profile module name.
+    :return: Tuple of (matched containers, {uri: original barcode}, unhandled data).
+    """
+    profile_module = import_module(profile)
+    get_alma_match_data = getattr(profile_module, "get_alma_match_data")
+    get_aspace_match_data = getattr(profile_module, "get_aspace_match_data")
+
+    # Placeholder containers for backlog / accession material share keys with
+    # real containers; drop them before matching so they neither cause
+    # duplicate-key exclusions nor receive Alma data.
+    containers_to_match, false_duplicates = exclude_false_duplicates(
+        db_settings, aspace_containers, get_aspace_match_data, logger
+    )
+    original_barcodes = {tc["uri"]: tc.get("barcode") for tc in containers_to_match}
+
+    aspace_match_data, tcs_with_duplicate_keys = get_aspace_match_data(
+        containers_to_match, logger
+    )
+    alma_match_data, items_with_duplicate_keys = get_alma_match_data(alma_items, logger)
+    matched_aspace_containers, unhandled_data = match_containers(
+        alma_match_data, aspace_match_data, logger
+    )
+    unhandled_data["items_with_duplicate_keys"] = items_with_duplicate_keys
+    unhandled_data["tcs_with_duplicate_keys"] = tcs_with_duplicate_keys
+    unhandled_data["false_duplicate_containers"] = false_duplicates
+    unhandled_data["tcs_with_barcode_mismatch"] = []
+    return matched_aspace_containers, original_barcodes, unhandled_data
+
+
+def check_barcode(
+    tc: dict, original_barcode: str | None, alma_barcode: str, unhandled_data: dict
+) -> bool:
+    """Returns False (and records the container as unhandled) if the container
+    already had a barcode that differs from the Alma barcode it was matched to.
+    A mismatch suggests a bad match, so no Alma data should be written.
+
+    :param dict tc: Matched ASpace top container.
+    :param str | None original_barcode: The container's barcode before matching.
+    :param str alma_barcode: Barcode of the matched Alma item.
+    :param dict unhandled_data: Unhandled data dict, updated in place.
+    :return: True if it is safe to update the container, False otherwise.
+    """
+    if original_barcode and original_barcode != alma_barcode:
+        logger.warning(
+            f"Top container {tc['uri']} already has barcode '{original_barcode}', "
+            f"but matched Alma item has barcode '{alma_barcode}'; skipping"
+        )
+        unhandled_data["tcs_with_barcode_mismatch"].append(
+            {
+                "uri": tc["uri"],
+                "type": tc.get("type"),
+                "indicator": tc.get("indicator"),
+                "aspace_barcode": original_barcode,
+                "alma_barcode": alma_barcode,
+            }
+        )
+        return False
+    return True
+
+
+def apply_alma_metadata(
+    tc: dict,
+    alma_item: dict,
+    holdings_id: str,
+    timestamp: str,
+    today: str,
+    slfs_location_refs: dict[str, str],
+) -> tuple[bool, bool]:
+    """Applies all migrated Alma metadata to a top container dict, in place.
+
+    :param dict tc: Matched ASpace top container.
+    :param dict alma_item: Matched Alma item.
+    :param str holdings_id: Alma holdings ID.
+    :param str timestamp: Timestamp for the internal note.
+    :param str today: Date for the location start_date.
+    :param dict[str, str] slfs_location_refs: Resolved SLF-S location refs.
+    :return: Tuple of (location_skipped, profile_skipped).
+    """
+    # Unconditional updates.
+    _apply_ils_ids(tc, alma_item, holdings_id)
+    _append_internal_note(tc, timestamp)
+    profile_skipped = not _apply_container_profile(tc, alma_item)
+
+    # Conditional update: location only for SLF-S items.
+    location_code = (alma_item.get("location", {}).get("value") or "").strip().lower()
+    if location_code in SLFS_CODES:
+        location_skipped = not _apply_location(
+            tc, location_code, slfs_location_refs, today
+        )
+    else:
+        location_skipped = True
+        logger.info(
+            f"Skipped location update for {tc['uri']}: "
+            f"location code '{location_code}' is not an SLF-S code"
+        )
+    return location_skipped, profile_skipped
+
+
+def get_run_timestamps() -> tuple[str, str]:
+    """Returns (timestamp, date) strings shared by all updates in a run."""
+    now = datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%dT%H:%M:%SZ"), now.strftime("%Y-%m-%d")
 
 
 # MAIN
@@ -306,6 +444,8 @@ def main() -> None:
     configure_logging(log_filename_stem=logging_filename_base, dry_run=args.dry_run)
 
     config = load_config(args.config_file)
+    # Required (even without --use_db) to correctly identify false duplicates.
+    db_settings = get_required_db_settings(config)
     alma_client = AlmaAPIClient(config["alma_config"]["alma_api_key"])
     aspace_client = ASnakeClient(**config)
 
@@ -330,28 +470,18 @@ def main() -> None:
         item["barcode"]: item for item in alma_items if item.get("barcode")
     }
 
-    # Match Alma items to ASpace top containers using the selected profile.
-    profile_module = import_module(args.profile)
-    get_alma_match_data = getattr(profile_module, "get_alma_match_data")
-    get_aspace_match_data = getattr(profile_module, "get_aspace_match_data")
-
-    aspace_match_data, tcs_with_duplicate_keys = get_aspace_match_data(
-        aspace_containers, logger
+    matched_aspace_containers, original_barcodes, unhandled_data = (
+        match_alma_items_to_containers(
+            db_settings, alma_items, aspace_containers, args.profile
+        )
     )
-    alma_match_data, items_with_duplicate_keys = get_alma_match_data(alma_items, logger)
-    matched_aspace_containers, unhandled_data = match_containers(
-        alma_match_data, aspace_match_data, logger
-    )
-    unhandled_data["items_with_duplicate_keys"] = items_with_duplicate_keys
-    unhandled_data["tcs_with_duplicate_keys"] = tcs_with_duplicate_keys
 
     # Single timestamp shared across all notes written in this run.
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # Date-only timestamp, for use in start_date
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    timestamp, today = get_run_timestamps()
 
     skipped_location: list[str] = []
     skipped_profile: list[str] = []
+    updated: list[dict] = []
 
     for tc in matched_aspace_containers:
         barcode = tc.get("barcode")
@@ -365,25 +495,24 @@ def main() -> None:
             )
             continue
 
-        # Unconditional updates.
-        _apply_ils_ids(tc, alma_item, args.holdings_id)
-        _append_internal_note(tc, timestamp)
-        if not _apply_container_profile(tc, alma_item):
-            skipped_profile.append(tc["uri"])
-
-        # Conditional update: location only for SLF-S items.
-        location_code = (
-            (alma_item.get("location", {}).get("value") or "").strip().lower()
-        )
-        if location_code in SLFS_CODES:
-            if not _apply_location(tc, location_code, slfs_location_refs, today):
-                skipped_location.append(tc["uri"])
+        original_barcode = original_barcodes.get(tc["uri"])
+        if barcode and not check_barcode(tc, original_barcode, barcode, unhandled_data):
+            continue
+        # This script migrates metadata only: never write the matched barcode.
+        # Restore the container's own barcode (or lack of one).
+        if original_barcode:
+            tc["barcode"] = original_barcode
         else:
+            tc.pop("barcode", None)
+
+        location_skipped, profile_skipped = apply_alma_metadata(
+            tc, alma_item, args.holdings_id, timestamp, today, slfs_location_refs
+        )
+        if location_skipped:
             skipped_location.append(tc["uri"])
-            logger.info(
-                f"Skipped location update for {tc['uri']}: "
-                f"location code '{location_code}' is not an SLF-S code"
-            )
+        if profile_skipped:
+            skipped_profile.append(tc["uri"])
+        updated.append(tc)
 
         if not args.dry_run:
             response = aspace_client.post(tc["uri"], json=tc)
@@ -398,7 +527,7 @@ def main() -> None:
     if args.dry_run:
         logger.info(
             f"Dry run: no changes written. Would have updated "
-            f"{len(matched_aspace_containers)} top containers."
+            f"{len(updated)} top containers."
         )
 
     _print_summary(

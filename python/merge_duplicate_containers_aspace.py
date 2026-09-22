@@ -8,8 +8,10 @@ from pathlib import Path
 
 from utils import configure_logging, load_config
 from utils.aspace_utils import (
+    find_false_duplicates,
     get_container_refs_from_db,
     get_ao_refs_for_top_container_from_db,
+    get_required_db_settings,
 )
 
 # Logger available globally within this module.
@@ -136,22 +138,33 @@ def _has_location_data(tcs: list[dict]) -> bool:
     return False
 
 
-def _has_recent_accession_keywords(tcs: list[dict]) -> bool:
-    """Check for recent accession keywords in archival objects titles,
-    logging a warning and returning True if found, False otherwise.
+def _partition_false_duplicates(
+    tcs: list[dict], false_duplicates: dict[str, str]
+) -> tuple[list[dict], list[dict]]:
+    """Split a duplicate group into real containers and "false duplicates"
+    (placeholders for backlog / accession material), logging each false duplicate.
+    False duplicates must never be merged, in either direction.
 
     :param list[dict] tcs: List of top container records.
-    :return: True if any recent accession keywords are found, False otherwise.
+    :param dict[str, str] false_duplicates: Mapping of false duplicate URI to reason,
+        from `find_false_duplicates`.
+    :return: A tuple of (real top containers, false duplicate top containers).
     """
-    recent_accession_keywords = ["accession", "backlog"]
+    real_tcs = []
+    false_tcs = []
     for tc in tcs:
-        for ao in tc["_related_aos_temp"]:
-            if any(
-                keyword in ao["title"].lower() for keyword in recent_accession_keywords
-            ):
-                logger.warning("Manual review required")
-                return True
-    return False
+        uri = tc.get("uri")
+        # URI should always be present, but type checker doesn't know that.
+        reason = false_duplicates.get(uri) if uri else None
+        if reason:
+            logger.warning(
+                f"Excluding false duplicate top container {tc.get('uri')} "
+                f"from merge: {reason}"
+            )
+            false_tcs.append(tc)
+        else:
+            real_tcs.append(tc)
+    return real_tcs, false_tcs
 
 
 def _determine_canonical_tc(tcs: list[dict]) -> tuple[dict, list[dict]]:
@@ -241,8 +254,12 @@ def _print_summary(summary: dict, dry_run: bool) -> None:
         f"Total duplicate groups: {summary['Total duplicate groups']}",
         f"Groups with location data: {summary['Groups with location data']}",
         (
-            f"Groups with recent accession keywords:"
-            f" {summary['Groups with recent accession keywords']}"
+            f"Groups with false duplicates excluded:"
+            f" {summary['Groups with false duplicates excluded']}"
+        ),
+        (
+            f"Groups not merged (fewer than 2 real containers):"
+            f" {summary['Groups not merged (fewer than 2 real containers)']}"
         ),
     ]
     # Add additional success/failure info if in production mode
@@ -312,6 +329,8 @@ def _process_duplicates_in_collection(
         2. Identify duplicate groups by type and indicator.
         3. For each group, designate a canonical top container,
         based on criteria provided by LSC.
+        3a. Exclude "false duplicates" (backlog / accession placeholders)
+        from each group; only merge if 2+ real containers remain.
         4. Merge the duplicate top containers into the canonical top container,
         preserving archival object links in the process.
         5. Delete the duplicate top container(s).
@@ -325,7 +344,8 @@ def _process_duplicates_in_collection(
     summary = {
         "Total duplicate groups": len(duplicate_groups),
         "Groups with location data": 0,
-        "Groups with recent accession keywords": 0,
+        "Groups with false duplicates excluded": 0,
+        "Groups not merged (fewer than 2 real containers)": 0,
         "Successful merges": 0,
         "Failed merges": 0,
     }
@@ -341,16 +361,23 @@ def _process_duplicates_in_collection(
         if _has_location_data(tcs):
             summary["Groups with location data"] += 1
 
-        # Resolve AO refs to their full dictionaries
-        # to make it easier to check AO titles for recent accession keywords
-        # on the whole top container group at once.
-        tcs = _resolve_aos_for_tcs(aspace_client, db_config, tcs)
-        # Check for recent accession keywords in the titles of related archival objects
-        # in the duplicate group, and stop processing the group if any are found.
-        if _has_recent_accession_keywords(tcs):
-            logger.warning("Found recent accession keywords in archival objects titles")
-            summary["Groups with recent accession keywords"] += 1
+        # Remove "false duplicates" (backlog / accession placeholders) from the group,
+        # so they are never merged, then merge whatever real duplicates remain.
+        false_duplicates = find_false_duplicates(db_config, tcs)
+        tcs, false_tcs = _partition_false_duplicates(tcs, false_duplicates)
+        if false_tcs:
+            summary["Groups with false duplicates excluded"] += 1
+        if len(tcs) < 2:
+            logger.info(
+                f"Not merging type '{type}' indicator '{indicator}': "
+                f"{len(tcs)} real container(s) after excluding false duplicates"
+            )
+            summary["Groups not merged (fewer than 2 real containers)"] += 1
             continue
+
+        # Resolve AO refs to their full dictionaries,
+        # used to choose the canonical top container.
+        tcs = _resolve_aos_for_tcs(aspace_client, db_config, tcs)
 
         canonical_tc, duplicate_tcs = _determine_canonical_tc(tcs)
 
@@ -380,9 +407,7 @@ def main() -> None:
     print(f"Logging to {log_filename}...")
 
     config = load_config(args.config_file)
-    db_config = config.get("database")
-    if not db_config:
-        raise ValueError("DB connection settings are required.")
+    db_config = get_required_db_settings(config)
     aspace_client = ASnakeClient(**config)
 
     _process_duplicates_in_collection(

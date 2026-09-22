@@ -5,6 +5,7 @@ from asnake.client import ASnakeClient
 from pathlib import Path
 
 from utils import configure_logging, load_config, write_dicts_to_csv
+from utils.aspace_utils import find_false_duplicates, get_required_db_settings
 
 # Logger available globally within this module.
 # Configuration is done by configure_logging(), which is called by main().
@@ -20,7 +21,8 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument(
         "--config_file",
         required=True,
-        help="Path to YAML configuration file with ArchivesSpace credentials.",
+        help="Path to YAML configuration file with ArchivesSpace API and database "
+        "credentials.",
     )
     parser.add_argument(
         "--collection_id",
@@ -80,59 +82,41 @@ def get_collection_title(aspace_client: ASnakeClient, collection_id: str) -> str
     return collection.get("title")
 
 
-def get_indicator_and_type_from_container_uri(
-    aspace_client: ASnakeClient, container_uri: str
-) -> tuple[str, str]:
-    """Given a container URI, returns the indicator and type.
+def get_top_container(aspace_client: ASnakeClient, container_uri: str) -> dict:
+    """Returns the full top container record for a URI.
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
     :param str container_uri: The URI of the container to retrieve.
     """
-    container = aspace_client.get(container_uri).json()
-    tc_indicator = container.get("indicator")
-    tc_type = container.get("type")
-    return tc_indicator, tc_type
+    return aspace_client.get(container_uri).json()
 
 
-def get_locations_from_container_uri(
-    aspace_client: ASnakeClient, container_uri: str
-) -> list[str]:
-    """Given a container URI, returns a list of names for the locations linked to that container.
+def get_location_titles(aspace_client: ASnakeClient, container: dict) -> list[str]:
+    """Returns a list of names for the locations linked to a container.
 
     :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
-    :param str container_uri: The URI of the container to retrieve.
+    :param dict container: Full top container record.
     """
-    container = aspace_client.get(container_uri).json()
-    locations_refs = container.get("container_locations", [])
     full_locations = []
-    if locations_refs:
-        for loc in locations_refs:
-            if "ref" in loc:
-                location = aspace_client.get(loc["ref"]).json()
-                full_locations.append(location.get("title", "Unknown Location"))
-
+    for loc in container.get("container_locations", []):
+        if "ref" in loc:
+            location = aspace_client.get(loc["ref"]).json()
+            full_locations.append(location.get("title", "Unknown Location"))
     return full_locations
 
 
-def get_linked_archival_objects_from_container_uri(
-    aspace_client: ASnakeClient, container_uri: str
-) -> list[str]:
-    """Given a container URI, returns a list of titles for the archival objects
-    linked to that container.
-
-    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
-    :param str container_uri: The URI of the container to retrieve.
-    """
-    container = aspace_client.get(container_uri).json()
-    ao_refs = container.get("series", [])
-    full_aos = []
-    if ao_refs:
-        for ao in ao_refs:
-            if "ref" in ao:
-                archival_object = aspace_client.get(ao["ref"]).json()
-                full_aos.append(archival_object.get("title", "Unknown Archival Object"))
-
-    return full_aos
+def _indicator_sort_key(indicator: str | None) -> tuple:
+    """Sort numeric indicators numerically, before any non-numeric ones."""
+    indicator = indicator or ""
+    # For each indicator, construct a tuple that allows proper sorting, formatted as:
+    # (0, numeric_value, "") for numeric indicators, or
+    # (1, 0, indicator) for non-numeric indicators.
+    # This ensures that numeric indicators are always sorted before non-numeric ones,
+    # and within each group, they are sorted appropriately.
+    if indicator.isdigit():
+        return (0, int(indicator), "")
+    else:
+        return (1, 0, indicator)
 
 
 def write_duplicates_to_file(
@@ -141,7 +125,7 @@ def write_duplicates_to_file(
     """Writes a list of duplicate indicators to a CSV file.
 
     :param list[dict] duplicates: A list of dictionaries with keys 'collection', 'indicator',
-    'type', and 'container_uri'.
+    'type', 'container_uri', 'locations', 'false_duplicate', and 'note'.
     :param str filename: The name of the CSV file to write to.
     :param str base_url: The base URL of the ArchivesSpace instance, used to create links to TCs.
     """
@@ -149,9 +133,9 @@ def write_duplicates_to_file(
     # Make sure indicator sort is done numerically, not by string comparison
     duplicates.sort(
         key=lambda x: (
-            x["collection"],
-            x["type"],
-            int(x["indicator"]),
+            x["collection"] or "",
+            x["type"] or "",
+            _indicator_sort_key(x["indicator"]),
             x["container_uri"],
         )
     )
@@ -182,34 +166,14 @@ def format_tc_uri_as_link(uri: str, base_url: str) -> str:
     return f"{base_url}/{tc_path}"
 
 
-def remove_backlog_containers_from_list(
-    aspace_client: ASnakeClient, duplicates: list
-) -> list[dict]:
-    """Given a list of top containers, removes any that are linked to Archival Objects
-    with "backlog material" in the title.
-
-    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
-    :param list duplicates: A list of Top Container URIs to check.
-    """
-    filtered_duplicates = []
-    for uri in duplicates:
-        linked_aos = get_linked_archival_objects_from_container_uri(aspace_client, uri)
-        if any("backlog material" in ao.lower() for ao in linked_aos):
-            # Log that this TC is being skipped due to backlog AO
-            logger.info(
-                f"Skipping container {uri} because it is linked to a backlog AO."
-            )
-        else:
-            filtered_duplicates.append(uri)
-    return filtered_duplicates
-
-
 def main() -> None:
     configure_logging(Path(__file__).stem)
     args = _get_args()
 
     # Get URL info from config file, and initialize client
     config = load_config(args.config_file)
+    # Required to correctly identify false duplicates.
+    db_settings = get_required_db_settings(config)
     base_url = config.get("baseurl", "")
     aspace_client = ASnakeClient(**config)
 
@@ -224,7 +188,7 @@ def main() -> None:
         )
         return
     elif args.start_collection_id and args.end_collection_id:
-        if args.start_collection_id > args.end_collection_id:
+        if int(args.start_collection_id) > int(args.end_collection_id):
             logger.error(
                 "start_collection_id must be less than or equal to end_collection_id."
             )
@@ -262,54 +226,45 @@ def main() -> None:
             f"Found {len(container_refs)} containers in collection "
             f"{collection_title} (ID: {collection_id})."
         )
-        indicator_type_pairs_seen = {}
-
         # Index all containers by their indicator and type:
         # Create a dictionary where the key is a tuple of (indicator, type)
-        # and the value is a list of container URIs that have that indicator and type
+        # and the value is a list of full container records with that indicator and type.
+        indicator_type_pairs_seen: dict[tuple, list[dict]] = {}
         for container_ref in container_refs:
-            tc_indicator, tc_type = get_indicator_and_type_from_container_uri(
-                aspace_client, container_ref
+            container = get_top_container(aspace_client, container_ref)
+            key = (container.get("indicator"), container.get("type"))
+            indicator_type_pairs_seen.setdefault(key, []).append(container)
+
+        for (tc_indicator, tc_type), containers in indicator_type_pairs_seen.items():
+            if len(containers) < 2:
+                continue
+            # Flag, but do not hide, "false duplicates": placeholder containers
+            # for backlog / accession material.
+            false_duplicates = find_false_duplicates(db_settings, containers)
+            real_count = len(containers) - len(false_duplicates)
+            logger.warning(
+                f"Duplicate indicator found: {tc_type} {tc_indicator} "
+                f"in collection {collection_id} ({len(containers)} occurrences, "
+                f"{len(false_duplicates)} false duplicates)"
             )
-            key = (tc_indicator, tc_type)
-            if key not in indicator_type_pairs_seen:
-                indicator_type_pairs_seen[key] = []
-            indicator_type_pairs_seen[key].append(container_ref)
-
-        # Remove "backlog material" containers from all potential duplicates
-        for key, container_uri_list in indicator_type_pairs_seen.items():
-            if len(container_uri_list) > 1:
-                # Only check for backlog material if we have more than one container
-                # with the same indicator/type to avoid unnecessary API calls.
-                indicator_type_pairs_seen[key] = remove_backlog_containers_from_list(
-                    aspace_client, container_uri_list
-                )
-
-        for (
-            tc_indicator,
-            tc_type,
-        ), container_uri_list in indicator_type_pairs_seen.items():
-            # If we still have more than one container after removing backlog containers,
-            # all of those are duplicates.
-            if len(container_uri_list) > 1:
-                logger.warning(
-                    f"Duplicate indicator found: {tc_type} {tc_indicator} "
-                    f"in collection {collection_id} ({len(container_uri_list)} occurrences)"
-                )
-                for container_ref in container_uri_list:
-                    locations_refs = get_locations_from_container_uri(
-                        aspace_client, container_ref
+            for container in containers:
+                reason = false_duplicates.get(container["uri"], "")
+                if reason:
+                    logger.info(
+                        f"Container {container['uri']} is a false duplicate: {reason}"
                     )
-
-                    tcs_with_duplicates.append(
-                        {
-                            "collection": collection_title,
-                            "indicator": tc_indicator,
-                            "type": tc_type,
-                            "container_uri": container_ref,
-                            "locations": locations_refs,
-                        }
-                    )
+                tcs_with_duplicates.append(
+                    {
+                        "collection": collection_title,
+                        "indicator": tc_indicator,
+                        "type": tc_type,
+                        "container_uri": container["uri"],
+                        "locations": get_location_titles(aspace_client, container),
+                        "false_duplicate": "Yes" if reason else "",
+                        "note": reason,
+                        "real_containers_in_group": real_count,
+                    }
+                )
     # If any duplicates found, write to file. Otherwise log that no duplicates found.
     # Construct a filename based on collection ID(s) included in the report.
     if tcs_with_duplicates:

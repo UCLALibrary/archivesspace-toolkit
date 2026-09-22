@@ -5,7 +5,7 @@ from asnake import logging
 from merge_duplicate_containers_aspace import (
     _determine_canonical_tc,
     _has_location_data,
-    _has_recent_accession_keywords,
+    _partition_false_duplicates,
 )
 
 # Structlog comes with a context manager for capturing logs
@@ -231,59 +231,40 @@ class TestMergeDuplicateContainers(unittest.TestCase):
         )
         self.assertEqual(logs[0]["log_level"], "warning")
 
-    def test_has_recent_accession_keywords(self):
-        """Test that `_has_recent_accession_keywords` returns True
-        and logs a warning message if recent accession keywords are found."""
+    def test_partition_false_duplicates(self):
+        """Test that false duplicates are separated from real containers
+        and a warning is logged for each."""
         test_tcs = [
-            {
-                "uri": "/top_containers/1",
-                "type": "box",
-                "indicator": "1",
-                "_related_aos_temp": [
-                    {
-                        "uri": "/archival_objects/1",
-                        "title": "Accession 1",
-                    },
-                    {
-                        "uri": "/archival_objects/2",
-                        "title": "Backlog 2",
-                    },
-                ],
-            },
+            {"uri": "/top_containers/1", "type": "box", "indicator": "1"},
+            {"uri": "/top_containers/2", "type": "box", "indicator": "1"},
+            {"uri": "/top_containers/3", "type": "box", "indicator": "1"},
         ]
+        false_duplicates = {"/top_containers/2": "Backlog material"}
 
         with capture_logs() as logs:
-            result = _has_recent_accession_keywords(test_tcs)
+            real_tcs, false_tcs = _partition_false_duplicates(
+                test_tcs, false_duplicates
+            )
 
-        # Function should return True and log a warning message
-        self.assertTrue(result)
-        self.assertEqual(len(logs), 1)
         self.assertEqual(
-            logs[0]["event"],
-            "Manual review required",
+            [tc["uri"] for tc in real_tcs], ["/top_containers/1", "/top_containers/3"]
         )
+        self.assertEqual([tc["uri"] for tc in false_tcs], ["/top_containers/2"])
+        self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0]["log_level"], "warning")
+        self.assertIn("/top_containers/2", logs[0]["event"])
 
-    def test_has_recent_accession_keywords_no_keywords(self):
-        """Test that `_has_recent_accession_keywords` returns False
-        if no recent accession keywords are found."""
+    def test_partition_false_duplicates_none_found(self):
+        """Test that all containers are kept, with no logging,
+        if there are no false duplicates."""
         test_tcs = [
-            {
-                "uri": "/top_containers/1",
-                "type": "box",
-                "indicator": "1",
-                "_related_aos_temp": [
-                    {
-                        "uri": "/archival_objects/1",
-                        "title": "Archival Object 1",  # no recent accession keywords
-                    },
-                ],
-            },
+            {"uri": "/top_containers/1", "type": "box", "indicator": "1"},
+            {"uri": "/top_containers/2", "type": "box", "indicator": "1"},
         ]
 
         with capture_logs() as logs:
-            result = _has_recent_accession_keywords(test_tcs)
+            real_tcs, false_tcs = _partition_false_duplicates(test_tcs, {})
 
-        # Function should return False and log no messages
-        self.assertFalse(result)
+        self.assertEqual(real_tcs, test_tcs)
+        self.assertEqual(false_tcs, [])
         self.assertEqual(len(logs), 0)

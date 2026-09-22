@@ -5,6 +5,8 @@ This module provides utilities for interacting with ArchivesSpace
 that can be reused across multiple scripts in the toolkit.
 """
 
+import re
+
 from asnake.client import ASnakeClient
 from MySQLdb import connect
 from MySQLdb.cursors import DictCursor
@@ -302,3 +304,203 @@ def get_aspace_containers(
         containers = _get_containers_from_container_refs(aspace_client, container_refs)
         write_to_cache(containers, aspace_cache_file)
     return containers
+
+
+# "FALSE DUPLICATE" TOP CONTAINERS
+#
+# A false duplicate is a top container that shares a key (e.g. "Box 1") with a real
+# container, but is really a placeholder linked to backlog or accession material.
+# False duplicates should be reported, but never merged or given migrated Alma data.
+#
+# A container is a false duplicate if the title of a directly linked archival object
+# (usually a File), or of that AO's immediate parent (usually a Series), contains
+# one of these terms as a whole word, in any capitalization.
+
+FALSE_DUPLICATE_TERMS: dict[str, re.Pattern] = {
+    "backlog": re.compile(r"\bbacklog\b", re.IGNORECASE),
+    # Matches "Accession", "accession", "ACCESSION" anywhere in a title, but not
+    # "deaccession", "accessions", "accessioned", "accessioning", etc.
+    "accession": re.compile(r"\baccession\b", re.IGNORECASE),
+}
+
+
+def get_false_duplicate_reason(linked_titles: list[tuple[str, str]]) -> str | None:
+    """Returns the reason a top container is a false duplicate, based on the titles
+    of its linked AOs and their parents, or None if it is not a false duplicate.
+
+    :param list[tuple[str, str]] linked_titles: (source, title) pairs, where source
+        describes where the title came from (e.g. "Linked AO", "Parent AO").
+    :return: Reason string naming the source, term, and matched title, or None.
+    """
+    for term, pattern in FALSE_DUPLICATE_TERMS.items():
+        for source, title in linked_titles:
+            if title and pattern.search(title):
+                return f"{source} title contains '{term}': {title}"
+    return None
+
+
+def get_linked_titles_for_top_containers_from_db(
+    db_settings: dict, top_container_ids: list[int]
+) -> dict[int, list[tuple[str, str]]]:
+    """Returns titles of the archival objects directly linked to the given top
+    containers, and of each of those AOs' immediate parents, via a single database query.
+
+    Unlike other queries in this module, this does NOT filter on publish/suppressed
+    status: placeholder AOs for backlog and accession material are usually unpublished,
+    and must still be detected.
+
+    :param dict db_settings: A dict with DB connection details.
+    :param list[int] top_container_ids: ASpace top container IDs.
+    :return: Dict mapping top container ID to a list of (source, title) pairs,
+        where source is "Linked AO" or "Parent AO". Every requested ID is present,
+        possibly with an empty list.
+    """
+    titles: dict[int, list[tuple[str, str]]] = {
+        tc_id: [] for tc_id in top_container_ids
+    }
+    if not top_container_ids:
+        return titles
+
+    mysql_client = connect(
+        host=db_settings.get("host"),
+        database=db_settings.get("database"),
+        user=db_settings.get("user"),
+        password=db_settings.get("password"),
+    )
+    # One placeholder per ID, for a safe parameterized IN clause.
+    placeholders = ", ".join(["%s"] * len(top_container_ids))
+    query = f"""
+        select distinct tclr.top_container_id as tc_id,
+            'Linked AO' as source, ao.title as title
+        from top_container_link_rlshp tclr
+        inner join sub_container sc on tclr.sub_container_id = sc.id
+        inner join instance i on sc.instance_id = i.id
+        inner join archival_object ao on i.archival_object_id = ao.id
+        where tclr.top_container_id in ({placeholders})
+        union
+        select distinct tclr.top_container_id as tc_id,
+            'Parent AO' as source, parent.title as title
+        from top_container_link_rlshp tclr
+        inner join sub_container sc on tclr.sub_container_id = sc.id
+        inner join instance i on sc.instance_id = i.id
+        inner join archival_object ao on i.archival_object_id = ao.id
+        inner join archival_object parent on ao.parent_id = parent.id
+        where tclr.top_container_id in ({placeholders})
+        order by tc_id, source, title
+    """
+    cursor = mysql_client.cursor(DictCursor)
+    cursor.execute(query, tuple(top_container_ids) * 2)
+    for row in cursor.fetchall():
+        titles[int(row["tc_id"])].append((row["source"], row["title"] or ""))
+    cursor.close()
+    mysql_client.close()
+    return titles
+
+
+def get_top_container_id(top_container_uri: str) -> int:
+    """Returns the numeric ID from a top container URI,
+    e.g. /repositories/2/top_containers/123 -> 123.
+
+    :param str top_container_uri: Top container URI.
+    :return: Top container ID.
+    """
+    return int(top_container_uri.rstrip("/").split("/")[-1])
+
+
+def get_required_db_settings(config: dict) -> dict:
+    """Returns the database settings from a loaded config file, or raises an error
+    if they are missing. For use by scripts that need the database for correct results.
+
+    :param dict config: Loaded YAML config.
+    :return: Database settings dict.
+    :raises ValueError: If the config has no `database` settings.
+    """
+    db_settings = config.get("database")
+    if not db_settings:
+        raise ValueError(
+            "Database connection settings (`database` in the config file) are required."
+        )
+    return db_settings
+
+
+def find_false_duplicates(
+    db_settings: dict, top_containers: list[dict]
+) -> dict[str, str]:
+    """Checks the given top containers for false duplicate status, using the database.
+
+    The database is required: the API has no endpoint for the archival objects linked
+    to a top container (the container's `series` field lists only top-level series).
+
+    :param dict db_settings: A dict with DB connection details.
+    :param list[dict] top_containers: Top container dicts (only `uri` is used).
+    :return: Dict mapping URI to reason, for false duplicates only.
+    """
+    tc_uris = {get_top_container_id(tc["uri"]): tc["uri"] for tc in top_containers}
+    titles_by_id = get_linked_titles_for_top_containers_from_db(
+        db_settings, list(tc_uris.keys())
+    )
+    false_duplicates: dict[str, str] = {}
+    for tc_id, titles in titles_by_id.items():
+        reason = get_false_duplicate_reason(titles)
+        if reason:
+            false_duplicates[tc_uris[tc_id]] = reason
+    return false_duplicates
+
+
+def _get_uri_from_duplicate_entry(entry: dict | tuple) -> str:
+    """Matching profiles report duplicate containers either as full dicts
+    or as tuples whose first element is the URI; return the URI either way."""
+    return entry["uri"] if isinstance(entry, dict) else entry[0]
+
+
+def exclude_false_duplicates(
+    db_settings: dict,
+    top_containers: list[dict],
+    get_aspace_match_data,
+    logger=None,
+) -> tuple[list[dict], list[dict]]:
+    """Removes false duplicates from a list of top containers before matching.
+
+    Only containers that share a matching key with another container (according to
+    the given profile's `get_aspace_match_data`) are checked, which keeps lookups
+    to a minimum. A placeholder whose key is unique is not a false duplicate,
+    and is left in place.
+
+    :param dict db_settings: A dict with DB connection details.
+    :param list[dict] top_containers: Full top container dicts.
+    :param get_aspace_match_data: The matching profile's get_aspace_match_data function.
+    :param logger: Optional logger.
+    :return: Tuple of (containers to use for matching,
+        excluded false duplicates as report dicts with uri, type, indicator, reason).
+    """
+    # Dry pass through the profile, without logging, just to find duplicate keys.
+    _, duplicate_entries = get_aspace_match_data(top_containers, None)
+    duplicate_uris = {_get_uri_from_duplicate_entry(e) for e in duplicate_entries}
+    if not duplicate_uris:
+        return top_containers, []
+
+    candidates = [tc for tc in top_containers if tc.get("uri") in duplicate_uris]
+    false_duplicates = find_false_duplicates(db_settings, candidates)
+
+    kept = []
+    excluded = []
+    for tc in top_containers:
+        uri = tc.get("uri")
+        reason = false_duplicates.get(uri) if uri else None
+        if reason:
+            if logger:
+                logger.info(
+                    f"Excluding false duplicate top container {tc['uri']} "
+                    f"({tc.get('type')} {tc.get('indicator')}): {reason}"
+                )
+            excluded.append(
+                {
+                    "uri": tc["uri"],
+                    "type": tc.get("type"),
+                    "indicator": tc.get("indicator"),
+                    "reason": reason,
+                }
+            )
+        else:
+            kept.append(tc)
+    return kept, excluded
