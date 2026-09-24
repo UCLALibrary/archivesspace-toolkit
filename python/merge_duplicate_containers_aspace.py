@@ -153,7 +153,7 @@ def _partition_false_duplicates(
     real_tcs = []
     false_tcs = []
     for tc in tcs:
-        reason = false_duplicates.get(tc.get("uri"))
+        reason = false_duplicates.get(tc.get("uri", ""))
         if reason:
             logger.warning(
                 f"Excluding false duplicate top container {tc.get('uri')} "
@@ -217,14 +217,14 @@ def _merge_top_containers(
     # to construct json payload for the request.
     request_body = JM.merge_requests(
         uri="/merge_requests/top_container",
-        merge_destination={"ref": canonical_tc["uri"]},
-        merge_candidates=[{"ref": tc["uri"]} for tc in duplicate_tcs],
+        merge_destination={"ref": canonical_tc.get("uri")},
+        merge_candidates=[{"ref": tc.get("uri")} for tc in duplicate_tcs],
     )
 
     logger.info(
         f"{'DRY RUN: Would merge' if dry_run else 'Merging'} "
-        f"duplicate top containers {[tc['uri'] for tc in duplicate_tcs]} "
-        f"into canonical top container '{canonical_tc['uri']}'"
+        f"duplicate top containers {[tc.get('uri') for tc in duplicate_tcs]} "
+        f"into canonical top container '{canonical_tc.get('uri')}'"
     )
 
     if not dry_run:
@@ -389,9 +389,9 @@ def _process_duplicates_in_collection(
         canonical_tc, duplicate_tcs = _determine_canonical_tc(tcs)
 
         logger.info(
-            f"Identified canonical top container '{canonical_tc['uri']}' "
+            f"Identified canonical top container '{canonical_tc.get('uri')}' "
             f"and {len(duplicate_tcs)} duplicate top container(s): "
-            f"{[tc['uri'] for tc in duplicate_tcs]}"
+            f"{[tc.get('uri') for tc in duplicate_tcs]}"
         )
 
         success = _merge_top_containers(

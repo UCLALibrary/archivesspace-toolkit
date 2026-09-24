@@ -126,7 +126,8 @@ def main() -> None:
             )
             continue
 
-        original_barcode = original_barcodes.get(tc["uri"])
+        uri = tc.get("uri", "")
+        original_barcode = original_barcodes.get(uri)
         # Never overwrite an existing, different barcode.
         if barcode and not check_barcode(tc, original_barcode, barcode, unhandled_data):
             continue
@@ -136,37 +137,35 @@ def main() -> None:
             tc, alma_item, args.holdings_id, timestamp, today, slfs_location_refs
         )
         if location_skipped:
-            skipped_location.append(tc["uri"])
+            skipped_location.append(uri)
         if profile_skipped:
-            skipped_profile.append(tc["uri"])
+            skipped_profile.append(uri)
 
         if args.dry_run:
             if adding_barcode:
-                logger.info(f"Dry run: would add barcode to top container {tc['uri']}")
-            updated.append(tc["uri"])
-            (barcodes_added if adding_barcode else barcodes_already_present).append(
-                tc["uri"]
-            )
+                logger.info(f"Dry run: would add barcode to top container {uri}")
+            updated.append(uri)
+            (barcodes_added if adding_barcode else barcodes_already_present).append(uri)
             continue
 
-        response = aspace_client.post(tc["uri"], json=tc)
+        response = aspace_client.post(uri, json=tc)
         if response.status_code != 200:
             logger.error(
-                f"Failed to update top container {tc['uri']}: "
+                f"Failed to update top container {uri}: "
                 f"{response.status_code} {response.text}"
             )
-            failed.append(tc["uri"])
+            failed.append(uri)
             continue
 
-        updated.append(tc["uri"])
+        updated.append(uri)
         if adding_barcode:
             # Same message as add_alma_barcodes_to_archivesspace.py, so this log
             # works with that script's --undo_barcoding --use_log option.
-            logger.info(f"Added barcode to top container {tc['uri']}")
-            barcodes_added.append(tc["uri"])
+            logger.info(f"Added barcode to top container {uri}")
+            barcodes_added.append(uri)
         else:
-            barcodes_already_present.append(tc["uri"])
-        logger.info(f"Updated metadata for top container {tc['uri']}")
+            barcodes_already_present.append(uri)
+        logger.info(f"Updated metadata for top container {uri}")
 
     _print_summary(
         alma_items,

@@ -53,7 +53,7 @@ def get_all_collection_ids(aspace_client: ASnakeClient) -> list[str]:
     collection_ids = []
     for collection in aspace_client.get_paged("repositories/2/resources"):
         # Get URI, e.g. /repositories/2/resources/123, and extract the numeric ID at the end
-        collection_ids.append(collection["uri"].split("/")[-1])
+        collection_ids.append(collection.get("uri").split("/")[-1])
     return collection_ids
 
 
@@ -248,17 +248,16 @@ def main() -> None:
                 f"{len(false_duplicates)} false duplicates)"
             )
             for container in containers:
-                reason = false_duplicates.get(container["uri"], "")
+                uri = container.get("uri", "")
+                reason = false_duplicates.get(uri, "")
                 if reason:
-                    logger.info(
-                        f"Container {container['uri']} is a false duplicate: {reason}"
-                    )
+                    logger.info(f"Container {uri} is a false duplicate: {reason}")
                 tcs_with_duplicates.append(
                     {
                         "collection": collection_title,
                         "indicator": tc_indicator,
                         "type": tc_type,
-                        "container_uri": container["uri"],
+                        "container_uri": uri,
                         "locations": get_location_titles(aspace_client, container),
                         "false_duplicate": "Yes" if reason else "",
                         "note": reason,

@@ -391,7 +391,7 @@ def get_linked_titles_for_top_containers_from_db(
     cursor = mysql_client.cursor(DictCursor)
     cursor.execute(query, tuple(top_container_ids) * 2)
     for row in cursor.fetchall():
-        titles[int(row["tc_id"])].append((row["source"], row["title"] or ""))
+        titles[int(row["tc_id"])].append((row["source"], row["title"]))
     cursor.close()
     mysql_client.close()
     return titles
@@ -435,7 +435,9 @@ def find_false_duplicates(
     :param list[dict] top_containers: Top container dicts (only `uri` is used).
     :return: Dict mapping URI to reason, for false duplicates only.
     """
-    tc_uris = {get_top_container_id(tc["uri"]): tc["uri"] for tc in top_containers}
+    tc_uris = {
+        get_top_container_id(tc.get("uri", "")): tc.get("uri") for tc in top_containers
+    }
     titles_by_id = get_linked_titles_for_top_containers_from_db(
         db_settings, list(tc_uris.keys())
     )
@@ -443,14 +445,26 @@ def find_false_duplicates(
     for tc_id, titles in titles_by_id.items():
         reason = get_false_duplicate_reason(titles)
         if reason:
-            false_duplicates[tc_uris[tc_id]] = reason
+            uri = tc_uris.get(tc_id)
+            # URI will always be present. Type checker doesn't know this, so add a guard here.
+            if uri is None:
+                raise ValueError(f"Expected URI for top container ID {tc_id}.")
+            false_duplicates[uri] = reason
     return false_duplicates
 
 
 def _get_uri_from_duplicate_entry(entry: dict | tuple) -> str:
     """Matching profiles report duplicate containers either as full dicts
     or as tuples whose first element is the URI; return the URI either way."""
-    return entry["uri"] if isinstance(entry, dict) else entry[0]
+    # URI will always be present in the entry, whether it's a dict or a tuple.
+    if isinstance(entry, dict):
+        # URI will always be present in the dict - see matching profiles in `config/`.
+        # For consistency, use .get() anyway and add a guard for the type checker.
+        uri = entry.get("uri")
+        if uri is None:
+            raise ValueError("Expected 'uri' key in duplicate entry dict.")
+        return uri
+    return entry[0]
 
 
 def exclude_false_duplicates(
@@ -490,12 +504,12 @@ def exclude_false_duplicates(
         if reason:
             if logger:
                 logger.info(
-                    f"Excluding false duplicate top container {tc['uri']} "
+                    f"Excluding false duplicate top container {uri} "
                     f"({tc.get('type')} {tc.get('indicator')}): {reason}"
                 )
             excluded.append(
                 {
-                    "uri": tc["uri"],
+                    "uri": uri,
                     "type": tc.get("type"),
                     "indicator": tc.get("indicator"),
                     "reason": reason,
