@@ -1,4 +1,5 @@
 import unittest
+import copy
 import os
 import json
 from config.base_match import match_containers
@@ -121,3 +122,47 @@ class TestSeriesMapping(unittest.TestCase):
             matched_aspace_containers[0]["barcode"],
             alma_items[0]["barcode"],
         )
+
+
+class TestDuplicateKeys(unittest.TestCase):
+    """Top containers or items sharing an (indicator, type, series) key are all
+    excluded from matching, including the third and later ones
+    (see config/base_match.build_match_data)."""
+
+    def _copies(self, record: dict, id_field: str, count: int = 3) -> list[dict]:
+        """Returns `count` copies of a record, with distinct identifiers."""
+        copies = []
+        for index in range(count):
+            copy_of_record = copy.deepcopy(record)
+            copy_of_record[id_field] = f"{record[id_field]}-{index}"
+            copies.append(copy_of_record)
+        return copies
+
+    def test_three_aspace_containers_with_same_key(self):
+        # aspace_data[0] has indicator "25C", parsed as indicator 25, series C.
+        containers = self._copies(aspace_data[0], "uri")
+        match_data, tcs_with_duplicate_keys = series_get_aspace_match_data(containers)
+        self.assertEqual(match_data, {})
+        self.assertCountEqual(
+            tcs_with_duplicate_keys,
+            [(tc["uri"], "25", "box", "C") for tc in containers],
+        )
+
+    def test_three_alma_items_with_same_key(self):
+        # alma_data[0] has description "ser.C box.0025".
+        items = self._copies(alma_data[0], "pid")
+        match_data, items_with_duplicate_keys = series_get_alma_match_data(items)
+        self.assertEqual(match_data, {})
+        self.assertCountEqual(
+            items_with_duplicate_keys,
+            [(item["pid"], "25", "box", "C") for item in items],
+        )
+
+    def test_unparseable_indicators_are_not_duplicates(self):
+        """Containers whose indicator can't be parsed are keyed by URI, so several
+        of them don't look like duplicates of each other."""
+        containers = [copy.deepcopy(aspace_data[2]), copy.deepcopy(aspace_data[3])]
+        containers[0]["uri"] = "/repositories/2/top_containers/4444"
+        match_data, tcs_with_duplicate_keys = series_get_aspace_match_data(containers)
+        self.assertEqual(len(match_data), 2)
+        self.assertEqual(tcs_with_duplicate_keys, [])

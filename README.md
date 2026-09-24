@@ -252,12 +252,12 @@ The script takes the following required arguments:
 - `--holdings_id`: The Alma holdings ID for the collection
 - `--resource_id`: The ArchivesSpace resource ID for the collection
 - `--profile`: The configuration profile to use to match Alma items to ArchivesSpace top containers (same profiles as the barcoding script; see Configuration Profiles)
-- `--config_file`: A YAML file containing configuration information, as described in the "API configuration files" section above
+- `--config_file`: A YAML file containing configuration information, as described in the "API configuration files" section above. **Database settings are required**, even without `--use_db` (see [Database requirement](#database-requirement)).
 
 The script also takes the following optional arguments:
 
 - `--repo_id`: The ASpace repository ID (default: 2)
-- `--use_db`: If set, the script will get ArchivesSpace top container information from the database instead of the API. Recommended for large collections where the API may time out.
+- `--use_db`: If set, the script will get the list of ArchivesSpace top containers from the database instead of the API. Recommended for large collections where the API may time out. This only affects how containers are retrieved; the database is always used to check for false duplicates.
 - `--dry_run`: If set, the script will not make any changes to ArchivesSpace. Log output will be in a more human-readable format for easier review.
 - `--print_output`: If set, the script will print log output to the console in addition to writing it to the log file.
 - `--use_cache`: If set, the script will use cached Alma and ASpace data from a previous run instead of making API calls.
@@ -287,8 +287,52 @@ After running the script, you will see the following output files:
 
 The log summary also includes counts of containers skipped for location update (non-SRLF items) and container profile update (missing or unrecognized VolEquiv).
 
+The unhandled data file also includes:
+- `false_duplicate_containers`: top containers excluded from matching as "false duplicates" (see [False duplicate top containers](#false-duplicate-top-containers)).
+- `tcs_with_barcode_mismatch`: matched top containers that already have a barcode different from the matched Alma item's. These are not updated, since the mismatch suggests a bad match.
+
+This script does not write barcodes: a matched container's existing barcode (or lack of one) is left unchanged. To add barcodes and migrate metadata together, see [Adding barcodes and migrating metadata in one step](#adding-barcodes-and-migrating-metadata-in-one-step).
+
 ### Running the migration script against hosted ArchivesSpace (Test and Production)
 The process is the same as for the barcoding script. See [Updating barcodes in hosted ArchivesSpace (Test and Production)](#updating-barcodes-in-hosted-archivesspace-test-and-production) above.
+
+## Adding barcodes and migrating metadata in one step
+
+`migrate_alma_barcodes_and_metadata_to_archivesspace.py` does the work of `add_alma_barcodes_to_archivesspace.py` and `migrate_alma_metadata_to_archivesspace.py` in a single pass: Alma and ASpace data are fetched and matched once, and each matched top container is updated once. It takes the same arguments as the migration script (see [Using the migration script](#using-the-migration-script)), and likewise requires database settings (see [Database requirement](#database-requirement)). The two original scripts can still be run separately.
+
+For each matched top container:
+- If it has no barcode, the Alma barcode is added, and metadata is migrated.
+- If it already has the same barcode as the Alma item, metadata is migrated.
+- If it already has a different barcode, it is skipped and listed under `tcs_with_barcode_mismatch` in the unhandled data file.
+
+Output is `logs/migrate_alma_barcodes_and_metadata_to_archivesspace_{timestamp}.log` and `output/unhandled_migrate_alma_barcodes_and_metadata_to_archivesspace.json`. Barcodes added by a live run can be removed with `add_alma_barcodes_to_archivesspace.py --undo_barcoding --use_log {LOG_PATH}`; this does not undo the metadata changes.
+
+## False duplicate top containers
+
+A "false duplicate" is a top container that shares an indicator (e.g. "Box 1") with a real container, but is a placeholder for backlog or accession material. A top container is treated as one if the title of a **directly linked archival object** (usually a File) or of **that archival object's immediate parent** (usually a Series) contains either of these words:
+
+- `backlog`, as a whole word in any capitalization ("Backlog material" matches; "backlogged" does not).
+- `accession`, as a whole word in any capitalization, anywhere in the title. "Accession LSC-2021-005" and "papers from accession 12" match; "deaccessioned", "Accessions", and "accessioning" do not.
+
+Grandparents and higher ancestors, and linked accession records, are not checked. The terms are defined in `FALSE_DUPLICATE_TERMS` in `utils/aspace_utils.py`. Only containers that share a matching key with another container are checked. The reason given in logs and reports names the record and title that matched, e.g. `Parent AO title contains 'accession': Accession LSC-2021-005`.
+
+- `find_duplicate_indicators.py` includes false duplicates in its CSV, with `false_duplicate`, `note`, and `real_containers_in_group` columns.
+- `migrate_alma_metadata_to_archivesspace.py` and `migrate_alma_barcodes_and_metadata_to_archivesspace.py` exclude them before matching, so they don't block their real counterpart from matching, and never receive Alma data.
+- `merge_duplicate_containers_aspace.py` never merges them; remaining real duplicates in the group are merged if there are at least two.
+
+Linked archival objects and their parents are always checked in the database, published or not (placeholders are usually unpublished). The API has no endpoint for the archival objects linked to a top container, and a top container's `series` field lists only top-level series, so there is no API-only option.
+
+### Database requirement
+
+Because of the false duplicate check, these scripts require database connection settings (the `database` section of the config file, see [API configuration files](#api-configuration-files)), and stop with an error if they are missing:
+- `find_duplicate_indicators.py`
+- `merge_duplicate_containers_aspace.py`
+- `migrate_alma_metadata_to_archivesspace.py`
+- `migrate_alma_barcodes_and_metadata_to_archivesspace.py`
+
+`--use_db`, where available, still only controls how the list of top containers is retrieved.
+
+When running against hosted ArchivesSpace, a database tunnel must be open; see [Accessing hosted databases](#accessing-hosted-databases-ucla-only). `run_aspace_script.sh` opens one automatically.
 
 ## Updating External IDs for ArchivesSpace Resources
 The script `update_aspace_external_ids.py` is used to update the External ID field for ArchivesSpace resources in bulk. The script removes any existing Archivists Toolkit external IDs (values with source "Archivists Toolkit Database::RESOURCE") and adds new MMS ID (Alma bib ID) and OCLC identifiers based on an input CSV file. 
