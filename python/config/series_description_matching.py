@@ -1,5 +1,7 @@
-from typing import Optional, Any
+from typing import Any, Optional
 import re
+
+from config.base_match import build_match_data, normalize_alma_indicator
 
 
 def parse_aspace_indicator(tc_indicator_with_series: str) -> tuple[str, str]:
@@ -23,142 +25,90 @@ def parse_aspace_indicator(tc_indicator_with_series: str) -> tuple[str, str]:
     return tc_indicator, tc_series
 
 
+def _get_aspace_key(tc: dict, logger: Optional[Any] = None):
+    """Returns the (indicator, type, series) matching key for an ASpace top container.
+
+    If the indicator can't be parsed, logs an error and returns the container's URI
+    instead. That key is unique, so the container won't match any Alma item and will
+    be reported as unhandled data.
+    """
+    tc_type = tc.get("type")
+    tc_indicator_with_series = tc.get("indicator", "")
+    tc_indicator, tc_series = parse_aspace_indicator(tc_indicator_with_series)
+
+    # normalize capitalization of series - all uppercase
+    if tc_series:
+        tc_series = tc_series.upper()
+
+    if not tc_series or not tc_indicator:
+        if logger:
+            logger.error(
+                f"Top container {tc.get('uri')} has an incorrect indicator format:"
+                f" {tc_indicator_with_series}."
+            )
+        return tc.get("uri")
+
+    return (tc_indicator, tc_type, tc_series)
+
+
+def _get_alma_key(item: dict, logger: Optional[Any] = None) -> tuple:
+    """Returns the (indicator, type, series) matching key for an Alma item, parsed
+    from its space- and period-delimited description,
+    e.g. "ser.P box.0011" -> ("11", "box", "P")."""
+    description = item.get("description", "")
+    alma_series = description.split(" ")[0].split(".")[1]
+    alma_type = description.split(" ")[1].split(".")[0]
+    alma_indicator = description.split(" ")[1].split(".")[1]
+
+    # normalize capitalization of series - all uppercase
+    alma_series = alma_series.upper()
+    alma_indicator = normalize_alma_indicator(alma_indicator)
+
+    return (alma_indicator, alma_type, alma_series)
+
+
+def _format_duplicate_tc(tc: dict, key) -> tuple:
+    """Reports a duplicate top container as (uri, indicator, type, series)."""
+    return (tc.get("uri"), *key) if isinstance(key, tuple) else (tc.get("uri"), key)
+
+
+def _format_duplicate_item(item: dict, key) -> tuple:
+    """Reports a duplicate Alma item as (pid, indicator, type, series)."""
+    return (item.get("pid"), *key) if isinstance(key, tuple) else (item.get("pid"), key)
+
+
 def get_aspace_match_data(
     aspace_containers: list, logger: Optional[Any] = None
-) -> tuple[dict[tuple, dict], list[tuple]]:
-    """Parses ASpace top container indicators into indicator and series and extracts the type.
-    Returns a dictionary with the indicator, type, and series as keys, and a list of top
-    containers with duplicate keys."""
-    match_data = {}
-    tcs_with_duplicate_keys = []
-    # Keys already known to be duplicated, so a 3rd+ container with the key is excluded too.
-    duplicate_keys = set()
-    for tc in aspace_containers:
-        tc_type = tc.get("type")
-        tc_indicator_with_series = tc.get("indicator")
-        tc_indicator, tc_series = parse_aspace_indicator(tc_indicator_with_series)
-
-        # normalize capitalization of series - all uppercase
-        if tc_series:
-            tc_series = tc_series.upper()
-
-        # if series or indicator is empty, there was a problem parsing the indicator.
-        # log an error, and set match_data to the URI, which will be a unique key
-        # this way it won't match any Alma items, and will be reported as unhandled data
-        if not tc_series or not tc_indicator:
-            if logger:
-                logger.error(
-                    f"Top container {tc.get('uri')} has an incorrect indicator format:"
-                    f" {tc_indicator_with_series}."
-                )
-            match_data[tc.get("uri")] = tc
-            continue
-
-        elif (tc_indicator, tc_type, tc_series) in duplicate_keys:
-            if logger:
-                logger.error(
-                    f"Duplicate top container found:"
-                    f" {tc_indicator} {tc_type} {tc_series} {tc.get('uri')}."
-                    " Skipping top container."
-                )
-            tcs_with_duplicate_keys.append(
-                (tc.get("uri"), tc_indicator, tc_type, tc_series)
-            )
-            continue
-
-        # double check for duplicates only if we have a valid indicator and series
-        elif (tc_indicator, tc_type, tc_series) in match_data:
-            if logger:
-                logger.error(
-                    f"Duplicate top container found:"
-                    f" {tc_indicator} {tc_type} {tc_series} {tc.get('uri')}."
-                    f" Existing top container:"
-                    f" {match_data[(tc_indicator, tc_type, tc_series)].get('uri')}."
-                    " Skipping both top containers."
-                )
-            tcs_with_duplicate_keys.append(
-                (tc.get("uri"), tc_indicator, tc_type, tc_series)
-            )
-            tcs_with_duplicate_keys.append(
-                (
-                    match_data[(tc_indicator, tc_type, tc_series)].get("uri"),
-                    tc_indicator,
-                    tc_type,
-                    tc_series,
-                )
-            )
-            # remove the duplicate
-            del match_data[(tc_indicator, tc_type, tc_series)]
-            duplicate_keys.add((tc_indicator, tc_type, tc_series))
-            # skip this top container
-            continue
-        match_data[(tc_indicator, tc_type, tc_series)] = tc
-    return match_data, tcs_with_duplicate_keys
+) -> tuple[dict, list[tuple]]:
+    """Parses ASpace top container indicators into indicator and series and extracts
+    the type. Returns a dictionary with the indicator, type, and series as keys, and a
+    list of top containers with duplicate keys, as (uri, indicator, type, series)
+    tuples. All top containers sharing a key are excluded from the match data.
+    """
+    return build_match_data(
+        aspace_containers,
+        get_key=_get_aspace_key,
+        record_label="top container",
+        id_field="uri",
+        format_duplicate=_format_duplicate_tc,
+        logger=logger,
+    )
 
 
 def get_alma_match_data(
     alma_items: list, logger: Optional[Any] = None
-) -> tuple[dict[tuple, dict], list[tuple]]:
+) -> tuple[dict, list[tuple]]:
     """Parses Alma item descriptions into container type, indicator, and series
     and normalizes the indicator by removing leading zeroes and trailing " RESTRICTED".
     Returns a dictionary with the normalized indicator, type, and series as keys, and
-    a list of items with duplicate keys.
+    a list of items with duplicate keys, as (pid, indicator, type, series) tuples.
+    All items sharing a key are excluded from the match data.
     """
-    match_data = {}
-    items_with_duplicate_keys = []
-    duplicate_keys = set()
-    for item in alma_items:
-        description = item.get("description", "")
-        # split description into series and container type/indicator (space and period delimited)
-        # e.g. "ser.P box.0011" -> "P", "box", "0011"
-        alma_series = description.split(" ")[0].split(".")[1]
-        alma_type = description.split(" ")[1].split(".")[0]
-        alma_indicator = description.split(" ")[1].split(".")[1]
-
-        # normalize capitalization of series - all uppercase
-        alma_series = alma_series.upper()
-
-        # if indicator starts with leading zeroes, remove them
-        alma_indicator = alma_indicator.lstrip("0")
-
-        # if indicator ends with " RESTRICTED", remove it
-        if alma_indicator.endswith(" RESTRICTED"):
-            alma_indicator = alma_indicator.replace(" RESTRICTED", "")
-
-        if (alma_indicator, alma_type, alma_series) in duplicate_keys:
-            if logger:
-                logger.error(
-                    f"Duplicate Alma description: {(alma_indicator, alma_type, alma_series)}"
-                    f" for item {item.get('pid')}. Skipping item."
-                )
-            items_with_duplicate_keys.append(
-                (item.get("pid"), alma_indicator, alma_type, alma_series)
-            )
-            continue
-        # check if this will be a duplicate key
-        if (alma_indicator, alma_type, alma_series) in match_data:
-            current_item_pid = item.get("pid")
-            previous_item_pid = match_data[
-                (alma_indicator, alma_type, alma_series)
-            ].get("pid")
-            if logger:
-                logger.error(
-                    f"Duplicate Alma description: {(alma_indicator, alma_type, alma_series)} "
-                    f" for item {current_item_pid}."
-                    f" Previous item with this description: {previous_item_pid}."
-                    " Skipping both items."
-                )
-            items_with_duplicate_keys.append(
-                (current_item_pid, alma_indicator, alma_type, alma_series)
-            )
-            items_with_duplicate_keys.append(
-                (previous_item_pid, alma_indicator, alma_type, alma_series)
-            )
-            # remove the duplicate
-            del match_data[(alma_indicator, alma_type, alma_series)]
-            duplicate_keys.add((alma_indicator, alma_type, alma_series))
-            # skip this item
-            continue
-        match_data[(alma_indicator, alma_type, alma_series)] = item
-
-    return match_data, items_with_duplicate_keys
+    return build_match_data(
+        alma_items,
+        get_key=_get_alma_key,
+        record_label="Alma item",
+        id_field="pid",
+        format_duplicate=_format_duplicate_item,
+        logger=logger,
+    )
