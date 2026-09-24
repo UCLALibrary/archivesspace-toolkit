@@ -53,7 +53,7 @@ def get_all_collection_ids(aspace_client: ASnakeClient) -> list[str]:
     collection_ids = []
     for collection in aspace_client.get_paged("repositories/2/resources"):
         # Get URI, e.g. /repositories/2/resources/123, and extract the numeric ID at the end
-        collection_ids.append(collection.get("uri").split("/")[-1])
+        collection_ids.append(collection.get("uri", "").split("/")[-1])
     return collection_ids
 
 
