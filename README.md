@@ -122,8 +122,8 @@ db_tunnel:
 For test:
 ```
 db_tunnel:
-  database_server: aspace-hosting-production-db-shared-s1.lyrtech.org
-  bastion_server: aspace-hosting-production-bastion.lyrtech.org
+  database_server: aspace-hosting-production-db-shared-s1.lyrtech.org # s1 instead of p1
+  bastion_server: aspace-hosting-production-bastion.lyrtech.org # same as production
   bastion_user: ucladev-kohler
   bastion_key_file: ~/.ssh/id_aspace_ssh_TEST
 ```
@@ -405,7 +405,9 @@ When running against hosted systems (UCLA's test and production ArchivesSpace in
 The hosted databases are IP-restricted, and must be accessed via tunneled connections.  To set up the connections, run one of the following on the support server we use, `p-u-exlsupport01.library.ucla.edu`:
 ```
 # Connect to TEST database
-### TBD - waiting for vendor to set this up ###
+ssh -i ~/.ssh/id_aspace_ssh_TEST -NT -L \
+3306:aspace-hosting-production-db-shared-s1.lyrtech.org:3306 \
+ucladev-kohler@aspace-hosting-production-bastion.lyrtech.org
 
 # Connect to PROD database
 ssh -i ~/.ssh/id_aspace_ssh -NT -L \
@@ -454,4 +456,3 @@ Log and output files (see [Evaluating the script output](#evaluating-the-script-
 
 - The wrapper script assumes it's being run on `p-u-asrunner01`. Directories default to `~/aspace-data`, i.e. within the invoking user's home directory. Running the wrapper script anywhere else (a laptop, another server) will create an `aspace-data` directory in that machine's home directory instead. To override the location, set `ASPACE_DATA_DIR` before running: `export ASPACE_DATA_DIR=/path/you/want`.
 - `docker-compose_scripts.yml` is intended for running scripts with `run_aspace_script.sh` only, not for running `docker compose` commands directly. The compose file relies on environment variables (`ASPACE_UID`, `ASPACE_GID`, `ASPACE_DATA_DIR`) that `run_aspace_script.sh` sets automatically. Running `docker compose` directly without those set will produce warnings about unset variables and cause the container to run as `root` rather than your own user.
-- The wrapper script opens a tunneled SSH connection to allow database access. Only the **PRODUCTION** database can be accessed in this way. If running a script against the **TEST** ASpace instance, you may see a mixture of Test and Production data.
