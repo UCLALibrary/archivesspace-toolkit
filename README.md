@@ -110,6 +110,24 @@ For other configurations, copy `python/.archivessnake.yml` to `python/.archivess
 
 These are excluded from the repository, so contact a teammate if you need specific credentials.
 
+Config files used with `run_aspace_script.sh` (see [Running scripts on the support server](#running-scripts-on-the-support-server-ucla-only)) also need a `db_tunnel` section, which tells that script how to reach the hosted database for the same environment. For production:
+```
+db_tunnel:
+  database_server: aspace-hosting-production-db-shared-p1.lyrtech.org
+  bastion_server: aspace-hosting-production-bastion.lyrtech.org
+  bastion_user: ucla-kohler
+  bastion_key_file: ~/.ssh/id_aspace_ssh
+```
+
+For test:
+```
+db_tunnel:
+  database_server: aspace-hosting-production-db-shared-s1.lyrtech.org
+  bastion_server: aspace-hosting-production-bastion.lyrtech.org
+  bastion_user: ucladev-kohler
+  bastion_key_file: ~/.ssh/id_aspace_ssh_TEST
+```
+
 ## Updating Barcodes
 ### General process
 
