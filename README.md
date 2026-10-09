@@ -110,6 +110,24 @@ For other configurations, copy `python/.archivessnake.yml` to `python/.archivess
 
 These are excluded from the repository, so contact a teammate if you need specific credentials.
 
+Config files used with `run_aspace_script.sh` (see [Running scripts on the support server](#running-scripts-on-the-support-server-ucla-only)) also need a `db_tunnel` section, which tells that script how to reach the hosted database for the same environment. For production:
+```
+db_tunnel:
+  database_server: aspace-hosting-production-db-shared-p1.lyrtech.org
+  bastion_server: aspace-hosting-production-bastion.lyrtech.org
+  bastion_user: ucla-kohler
+  bastion_key_file: ~/.ssh/id_aspace_ssh
+```
+
+For test:
+```
+db_tunnel:
+  database_server: aspace-hosting-production-db-shared-s1.lyrtech.org # s1 instead of p1
+  bastion_server: aspace-hosting-production-bastion.lyrtech.org # same as production
+  bastion_user: ucladev-kohler
+  bastion_key_file: ~/.ssh/id_aspace_ssh_TEST
+```
+
 ## Updating Barcodes
 ### General process
 
@@ -387,7 +405,9 @@ When running against hosted systems (UCLA's test and production ArchivesSpace in
 The hosted databases are IP-restricted, and must be accessed via tunneled connections.  To set up the connections, run one of the following on the support server we use, `p-u-exlsupport01.library.ucla.edu`:
 ```
 # Connect to TEST database
-### TBD - waiting for vendor to set this up ###
+ssh -i ~/.ssh/id_aspace_ssh_TEST -NT -L \
+3306:aspace-hosting-production-db-shared-s1.lyrtech.org:3306 \
+ucladev-kohler@aspace-hosting-production-bastion.lyrtech.org
 
 # Connect to PROD database
 ssh -i ~/.ssh/id_aspace_ssh -NT -L \
@@ -426,6 +446,8 @@ For example:
     --dry_run --print_output
 ```
 
+Be sure to separate argument values with spaces, not equal signs, when using the wrapper script. For example, use `--config_file secrets/.archivessnake_secret_PROD.yml` rather than `--config_file=secrets/.archivessnake_secret_PROD.yml`.
+
 Note two differences from running locally via the dev container:
 - Do not include `python` before the script name - the wrapper adds this automatically.
 - `--config_file` needs a `secrets/` prefix, since config files are mounted into a `secrets/` subdirectory rather than the working directory root.
@@ -436,4 +458,3 @@ Log and output files (see [Evaluating the script output](#evaluating-the-script-
 
 - The wrapper script assumes it's being run on `p-u-asrunner01`. Directories default to `~/aspace-data`, i.e. within the invoking user's home directory. Running the wrapper script anywhere else (a laptop, another server) will create an `aspace-data` directory in that machine's home directory instead. To override the location, set `ASPACE_DATA_DIR` before running: `export ASPACE_DATA_DIR=/path/you/want`.
 - `docker-compose_scripts.yml` is intended for running scripts with `run_aspace_script.sh` only, not for running `docker compose` commands directly. The compose file relies on environment variables (`ASPACE_UID`, `ASPACE_GID`, `ASPACE_DATA_DIR`) that `run_aspace_script.sh` sets automatically. Running `docker compose` directly without those set will produce warnings about unset variables and cause the container to run as `root` rather than your own user.
-- The wrapper script opens a tunneled SSH connection to allow database access. Only the **PRODUCTION** database can be accessed in this way. If running a script against the **TEST** ASpace instance, you may see a mixture of Test and Production data.
