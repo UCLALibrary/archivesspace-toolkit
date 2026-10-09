@@ -325,6 +325,46 @@ For each matched top container:
 
 Output is `logs/migrate_alma_barcodes_and_metadata_to_archivesspace_{timestamp}.log` and `output/unhandled_migrate_alma_barcodes_and_metadata_to_archivesspace.json`. Barcodes added by a live run can be removed with `add_alma_barcodes_to_archivesspace.py --undo_barcoding --use_log {LOG_PATH}`; this does not undo the metadata changes.
 
+# Finding duplicate indicators
+ 
+`find_duplicate_indicators.py` reports top containers which share the same indicator and type as another top container in the same collection (for example, two containers which are both "Box 1"). The script only reads data: it does not make any changes to ArchivesSpace.
+ 
+Indicator and type are compared exactly as stored in ArchivesSpace, with no normalization, so indicators "1" and "01" are not treated as duplicates of each other.
+ 
+### Using the duplicate indicator script
+ 
+The script takes the following required argument:
+- `--config_file`: A YAML file containing configuration information, as described in the "API configuration files" section above. **Database settings are required**, even without `--use_db` (see [Database requirement](#database-requirement)).
+The script also takes the following optional arguments:
+- `--collection_id`: The ArchivesSpace resource ID of a single collection to check. If not set, all collections are checked. This cannot be combined with `--start_collection_id` or `--end_collection_id`.
+- `--start_collection_id`: If set, only collections with a resource ID greater than or equal to this value are checked.
+- `--end_collection_id`: If set, only collections with a resource ID less than or equal to this value are checked.
+- `--use_db`: If set, the script will get the list of top containers for each collection from the database instead of the API. Recommended for large collections where the API may time out; see [Using the database for large collections](#using-the-database-for-large-collections).
+The script only checks collections in repository 2.
+ 
+Example usage from the support server (see [Running scripts on the support server](#running-scripts-on-the-support-server-ucla-only)):
+```bash
+./run_aspace_script.sh find_duplicate_indicators.py \
+    --config_file secrets/.archivessnake_secret_PROD.yml \
+    --collection_id 1234 \
+    --use_db
+```
+
+### Duplicate indicator output
+ 
+The script outputs a CSV report (`duplicate_indicators_{collections}.csv`) with information on duplicate indicators and a log (`logs/find_duplicate_indicators_{timestamp}.log`) file with detailed information about the script's run.
+
+The report has one row for each top container in a group of duplicates, including false duplicates, with these columns:
+- `collection`: The title of the collection.
+- `indicator` and `type`: The values shared by the containers in the group.
+- `container_uri`: The ArchivesSpace URI of the top container, e.g. `/repositories/2/top_containers/123`.
+- `locations`: The names of the container's locations, separated by semicolons.
+- `false_duplicate`: "Yes" if the container is a false duplicate, otherwise empty (see [False duplicate top containers](#false-duplicate-top-containers)).
+- `note`: For a false duplicate, the reason it was identified as one.
+- `real_containers_in_group`: The number of containers in the group which are not false duplicates. If this is 1 or 0, the group contains no real duplicates.
+- `tc_link`: A link to the top container, built from the `baseurl` in the configuration file.
+
+
 ## False duplicate top containers
 
 A "false duplicate" is a top container that shares an indicator (e.g. "Box 1") with a real container, but is a placeholder for backlog or accession material. A top container is treated as one if the title of a **directly linked archival object** (usually a File) or of **that archival object's immediate parent** (usually a Series) contains either of these words:
