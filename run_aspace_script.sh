@@ -30,24 +30,37 @@ fi
 # (test or production) the script talks to, so it also decides which database
 # the tunnel below connects to. Find it among the Python script's arguments.
 CONFIG_FILE=""
-ARGS=("$@")
-for ((i = 0; i < ${#ARGS[@]}; i++)); do
-  ARG_NAME="${ARGS[i]%%=*}"
-  if [ "${ARG_NAME}" = "--config_file" ]; then
-    if [ "${ARGS[i]}" != "${ARG_NAME}" ]; then
-      # --config_file=path
-      CONFIG_FILE="${ARGS[i]#*=}"
-    else
-      # --config_file path
-      CONFIG_FILE="${ARGS[i + 1]:-}"
-    fi
-  fi
-done
+find_config_file() {
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --config_file) CONFIG_FILE="${2:-}"; shift ;;
+    esac
+    shift
+  done
+}
+find_config_file "$@"
 
 if [ -z "$CONFIG_FILE" ]; then
   echo "ERROR: --config_file argument is required." >&2
   exit 1
 fi
+
+# CONFIG_FILE is a path inside the container, where ${ASPACE_DATA_DIR}/secrets
+# is mounted as secrets/. Find the same file on this server.
+case "${CONFIG_FILE}" in
+  secrets/*)
+    HOST_CONFIG_FILE="${ASPACE_DATA_DIR}/${CONFIG_FILE}"
+    ;;
+  *)
+    echo "ERROR: --config_file must be in secrets/, e.g. secrets/.archivessnake_secret_TEST.yml" >&2
+    exit 1
+    ;;
+esac
+if [ ! -f "${HOST_CONFIG_FILE}" ]; then
+  echo "ERROR: Config file not found: ${HOST_CONFIG_FILE}" >&2
+  exit 1
+fi
+
 ### End CONFIG FILE LOOKUP ###
 
 ### Begin SSH TUNNEL SETUP ###
@@ -69,31 +82,6 @@ LOCAL_PORT=3306
 REMOTE_PORT=3306 # Must always be this.
 TUNNEL_OPEN="false"
 
-# Print the db_tunnel settings from the given config file, one per line.
-# This uses the Python YAML library in the Docker image, so the file is read
-# in the same way, and from the same (container) path, as the Python scripts read it.
-# This will later be used to establish the SSH tunnel.
-read_tunnel_settings() {
-  docker compose -f "${COMPOSE_FILE}" run --rm -T scripts python -c '
-import sys
-import yaml
-
-config_file = sys.argv[1]
-try:
-    with open(config_file) as f:
-        tunnel = (yaml.safe_load(f) or {}).get("db_tunnel") or {}
-except (OSError, yaml.YAMLError) as error:
-    sys.exit(f"ERROR: Cannot read config file {config_file}: {error}")
-
-keys = ["database_server", "bastion_server", "bastion_user", "bastion_key_file"]
-missing = ", ".join(key for key in keys if not tunnel.get(key))
-if missing:
-    sys.exit(f"ERROR: {config_file} is missing db_tunnel setting(s): {missing}")
-for key in keys:
-    print(tunnel[key])
-' "$1"
-}
-
 # Close the database tunnel, but only if this run of the script opened it.
 close_tunnel() {
   if [ "${TUNNEL_OPEN}" = "true" ]; then
@@ -104,16 +92,13 @@ close_tunnel() {
 # Close the tunnel however this script ends: normally, on error, or when interrupted.
 trap close_tunnel EXIT
 
-TUNNEL_OUTPUT="$(read_tunnel_settings "${CONFIG_FILE}")"
-mapfile -t TUNNEL_SETTINGS <<< "${TUNNEL_OUTPUT}"
-if [ "${#TUNNEL_SETTINGS[@]}" -ne 4 ]; then
-  echo "ERROR: Could not read db_tunnel settings from ${CONFIG_FILE}." >&2
-  exit 1
-fi
-DATABASE_SERVER="${TUNNEL_SETTINGS[0]}"
-BASTION_SERVER="${TUNNEL_SETTINGS[1]}"
-BASTION_USER="${TUNNEL_SETTINGS[2]}"
-BASTION_KEY_FILE="${TUNNEL_SETTINGS[3]}"
+# Get the database tunnel settings from the config file directly, without using Python.
+# This approach assumes the config file uses a simple "key: value" format for the db_tunnel section.
+# Cut the value after the colon and remove any surrounding whitespace.
+DATABASE_SERVER=$(grep "database_server" "${HOST_CONFIG_FILE}" | cut -d ':' -f 2 | tr -d ' ')
+BASTION_SERVER=$(grep "bastion_server" "${HOST_CONFIG_FILE}" | cut -d ':' -f 2 | tr -d ' ')
+BASTION_USER=$(grep "bastion_user" "${HOST_CONFIG_FILE}" | cut -d ':' -f 2 | tr -d ' ')
+BASTION_KEY_FILE=$(grep "bastion_key_file" "${HOST_CONFIG_FILE}" | cut -d ':' -f 2 | tr -d ' ')
 BASTION_DESTINATION="${BASTION_USER}@${BASTION_SERVER}"
 # One socket per bastion user, so test and production tunnels can't be confused.
 # (ssh expands the ~ itself, here and in the key file path.)

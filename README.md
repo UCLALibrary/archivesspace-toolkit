@@ -446,6 +446,8 @@ For example:
     --dry_run --print_output
 ```
 
+Be sure to separate argument values with spaces, not equal signs, when using the wrapper script. For example, use `--config_file secrets/.archivessnake_secret_PROD.yml` rather than `--config_file=secrets/.archivessnake_secret_PROD.yml`.
+
 Note two differences from running locally via the dev container:
 - Do not include `python` before the script name - the wrapper adds this automatically.
 - `--config_file` needs a `secrets/` prefix, since config files are mounted into a `secrets/` subdirectory rather than the working directory root.
