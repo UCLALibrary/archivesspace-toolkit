@@ -5,7 +5,11 @@ from asnake.client import ASnakeClient
 from pathlib import Path
 
 from utils import configure_logging, load_config, write_dicts_to_csv
-from utils.aspace_utils import find_false_duplicates, get_required_db_settings
+from utils.aspace_utils import (
+    find_false_duplicates,
+    get_container_refs_from_db,
+    get_required_db_settings,
+)
 
 # Logger available globally within this module.
 # Configuration is done by configure_logging(), which is called by main().
@@ -42,6 +46,14 @@ def _get_args() -> argparse.Namespace:
         help="AS collection ID to end checking at. Only collections with IDs less than or equal "
         "to this will be checked.",
     )
+    parser.add_argument(
+        "--use_db",
+        action="store_true",
+        help="Get the list of top containers in each collection from the database instead of "
+        "the API (for large collections, where the API may time out). Only containers linked "
+        "to at least one published, unsuppressed archival object are included. "
+        "Database settings are required either way.",
+    )
     return parser.parse_args()
 
 
@@ -69,6 +81,28 @@ def get_containers_in_collection(
     container_refs = aspace_client.get(url).json()
     # Extract the ref URIs and de-dup
     return set(tc["ref"] for tc in container_refs)
+
+
+def get_container_refs(
+    aspace_client: ASnakeClient, db_settings: dict, collection_id: str, use_db: bool
+) -> set[str]:
+    """Returns the top container ref URIs for a collection, from the database or the API.
+
+    The database route avoids the `/resources/:id/top_containers` API call, which can
+    time out in hosted environments for collections with thousands of containers.
+    The two routes filter on publication status differently, so they can return
+    different sets of containers for the same collection:
+    see `get_container_refs_from_db` for the database filter.
+
+    :param ASnakeClient aspace_client: An authenticated ASnakeClient instance.
+    :param dict db_settings: A dict with DB connection details.
+    :param str collection_id: The numeric ID of the collection to check.
+    :param bool use_db: If True, get container refs from the database instead of the API.
+    :return: A set of container refs.
+    """
+    if use_db:
+        return get_container_refs_from_db(db_settings, int(collection_id))
+    return get_containers_in_collection(aspace_client, collection_id)
 
 
 def get_collection_title(aspace_client: ASnakeClient, collection_id: str) -> str:
@@ -221,10 +255,13 @@ def main() -> None:
             f"Checking collection {collection_title} (ID: {collection_id}) for duplicates."
         )
         # Get all containers in the collection
-        container_refs = get_containers_in_collection(aspace_client, collection_id)
+        container_refs = get_container_refs(
+            aspace_client, db_settings, collection_id, args.use_db
+        )
         logger.info(
             f"Found {len(container_refs)} containers in collection "
-            f"{collection_title} (ID: {collection_id})."
+            f"{collection_title} (ID: {collection_id}), "
+            f"via {'database' if args.use_db else 'API'}."
         )
         # Index all containers by their indicator and type:
         # Create a dictionary where the key is a tuple of (indicator, type)
