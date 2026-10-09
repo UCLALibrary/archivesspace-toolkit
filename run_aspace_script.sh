@@ -92,9 +92,9 @@ close_tunnel() {
 # Close the tunnel however this script ends: normally, on error, or when interrupted.
 trap close_tunnel EXIT
 
-# Get the database tunnel settings from the config file directly, without using Python.
+# Get the database tunnel settings from the config file directly.
 # This approach assumes the config file uses a simple "key: value" format for the db_tunnel section.
-# Cut the value after the colon and remove any surrounding whitespace.
+# Cut the value after the colon, take the second field, and remove any surrounding whitespace.
 DATABASE_SERVER=$(grep "database_server" "${HOST_CONFIG_FILE}" | cut -d ':' -f 2 | tr -d ' ')
 BASTION_SERVER=$(grep "bastion_server" "${HOST_CONFIG_FILE}" | cut -d ':' -f 2 | tr -d ' ')
 BASTION_USER=$(grep "bastion_user" "${HOST_CONFIG_FILE}" | cut -d ':' -f 2 | tr -d ' ')
