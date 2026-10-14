@@ -13,7 +13,6 @@ from utils.aspace_utils import (
     get_container_refs_from_db,
 )
 
-
 # Logger available globally within this module.
 # Configuration is done by configure_logging(), which is called by main().
 # Made available globally so that tests can use the same logger with their own configuration.
@@ -82,6 +81,7 @@ def _parse_compound_indicator(indicator: str) -> list[str]:
     For example:
     - Comma-separated lists: "29, 32a, 37" -> ["29", "32a", "37"]
     - Numeric ranges: "38-42" -> ["38", "39", "40", "41", "42"]
+    - Numeric ranges with spaces: "10 - 12" -> ["10", "11", "12"]
     - Mixed: "1-3, 5a" -> ["1", "2", "3", "5a"]
 
     :param str indicator: The compound indicator to parse.
@@ -101,7 +101,9 @@ def _parse_compound_indicator(indicator: str) -> list[str]:
         # Any other square brackets will need to be reviewed manually.
         part = part.strip("[]")
         # Match numeric ranges, e.g. 1-3
-        if re.match(r"^\d+-\d+$", part):
+        if re.match(r"^\d+\s*-\s*\d+$", part):
+            # Remove any spaces around the dash for consistent processing
+            part = part.replace(" ", "")
             try:
                 expanded_range = _expand_range(part)
                 expanded.extend(expanded_range)
