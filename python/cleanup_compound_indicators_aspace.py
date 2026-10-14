@@ -13,7 +13,6 @@ from utils.aspace_utils import (
     get_container_refs_from_db,
 )
 
-
 # Logger available globally within this module.
 # Configuration is done by configure_logging(), which is called by main().
 # Made available globally so that tests can use the same logger with their own configuration.
@@ -76,12 +75,23 @@ def _expand_range(indicator: str) -> list[str]:
     raise ValueError("Not a valid numeric range")
 
 
+def _is_compound_indicator(indicator: str) -> bool:
+    """Check if an indicator is compound (contains commas, ranges, or conjunctions).
+
+    :param str indicator: The indicator to check.
+    :return: True if the indicator is compound, False otherwise.
+    """
+    compound_indicator_pattern = r",|\d+\s*-\s*\d+|&|\band\b"
+    return bool(re.search(compound_indicator_pattern, indicator))
+
+
 def _parse_compound_indicator(indicator: str) -> list[str]:
     """Parse a compound indicator into its individual values.
 
     For example:
     - Comma-separated lists: "29, 32a, 37" -> ["29", "32a", "37"]
     - Numeric ranges: "38-42" -> ["38", "39", "40", "41", "42"]
+    - Numeric ranges with spaces: "10 - 12" -> ["10", "11", "12"]
     - Mixed: "1-3, 5a" -> ["1", "2", "3", "5a"]
 
     :param str indicator: The compound indicator to parse.
@@ -101,7 +111,9 @@ def _parse_compound_indicator(indicator: str) -> list[str]:
         # Any other square brackets will need to be reviewed manually.
         part = part.strip("[]")
         # Match numeric ranges, e.g. 1-3
-        if re.match(r"^\d+-\d+$", part):
+        if re.match(r"^\d+\s*-\s*\d+$", part):
+            # Remove any spaces around the dash for consistent processing
+            part = part.replace(" ", "")
             try:
                 expanded_range = _expand_range(part)
                 expanded.extend(expanded_range)
@@ -355,15 +367,11 @@ def _cleanup_compound_indicators(
         aspace_client, resource_uri, resource_id, db_config
     )
 
-    # Regex checks for commas, numeric ranges, "&", or " and " (case-insensitive)
-    compound_indicator_pattern = r",|\d+-\d+|&|\band\b"
     compound_tcs = [
         tc
         for tc in all_tcs
         if tc.get("type", "") == "box"  # only concerned with boxes for now
-        and re.search(
-            compound_indicator_pattern, tc.get("indicator", ""), flags=re.IGNORECASE
-        )
+        and _is_compound_indicator(tc.get("indicator", ""))
     ]
     logger.info(
         f"Found {len(compound_tcs)} top container{'s' if len(compound_tcs) > 1 else ''} "
