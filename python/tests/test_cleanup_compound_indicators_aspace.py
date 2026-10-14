@@ -1,6 +1,6 @@
 import unittest
 
-from cleanup_compound_indicators_aspace import _parse_compound_indicator
+from cleanup_compound_indicators_aspace import _parse_compound_indicator, _is_compound_indicator
 
 
 class TestParseCompoundIndicator(unittest.TestCase):
@@ -37,3 +37,23 @@ class TestParseCompoundIndicator(unittest.TestCase):
             with self.subTest(input=input):
                 # Invalid indicators should raise a ValueError.
                 self.assertRaises(ValueError, _parse_compound_indicator, input)
+
+class TestIsCompoundIndicator(unittest.TestCase):
+    """Test the `_is_compound_indicator` function."""
+
+    def setUp(self):
+        self.test_cases = [
+            ("29, 32a, 37, 41, 48", True),
+            ("1,2,3", True),
+            ("38-42", True),
+            ("200 - 203", True),
+            ("1, 3, 3, 5-7", True),
+            ("[1-3]", True),
+            ("1 & 2, 3-5, 7 and 8", True),
+            ("Foo-Bar", False),
+        ]
+
+    def test_is_compound_indicator(self):
+        for input, expected in self.test_cases:
+            with self.subTest(input=input):
+                self.assertEqual(_is_compound_indicator(input), expected)

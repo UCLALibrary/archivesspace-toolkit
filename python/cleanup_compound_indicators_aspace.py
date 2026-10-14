@@ -75,6 +75,16 @@ def _expand_range(indicator: str) -> list[str]:
     raise ValueError("Not a valid numeric range")
 
 
+def _is_compound_indicator(indicator: str) -> bool:
+    """Check if an indicator is compound (contains commas, ranges, or conjunctions).
+
+    :param str indicator: The indicator to check.
+    :return: True if the indicator is compound, False otherwise.
+    """
+    compound_indicator_pattern = r",|\d+\s*-\s*\d+|&|\band\b"
+    return bool(re.search(compound_indicator_pattern, indicator))
+
+
 def _parse_compound_indicator(indicator: str) -> list[str]:
     """Parse a compound indicator into its individual values.
 
@@ -357,15 +367,11 @@ def _cleanup_compound_indicators(
         aspace_client, resource_uri, resource_id, db_config
     )
 
-    # Regex checks for commas, numeric ranges, "&", or " and " (case-insensitive)
-    compound_indicator_pattern = r",|\d+-\d+|&|\band\b"
     compound_tcs = [
         tc
         for tc in all_tcs
         if tc.get("type", "") == "box"  # only concerned with boxes for now
-        and re.search(
-            compound_indicator_pattern, tc.get("indicator", ""), flags=re.IGNORECASE
-        )
+        and _is_compound_indicator(tc.get("indicator", ""))
     ]
     logger.info(
         f"Found {len(compound_tcs)} top container{'s' if len(compound_tcs) > 1 else ''} "
