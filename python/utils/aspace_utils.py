@@ -83,11 +83,11 @@ def get_ao_uris_by_external_id_source_from_db(
     Matching uses SQL LIKE, which is case-insensitive under MySQL's default
     collations, so results may include sources that differ only in case. Callers
     should re-check each record's sources before changing anything.
+
     :param dict db_settings: A dict with DB connection details.
     :param int repo_id: ASpace repository ID to search.
     :param str source_prefix: Leading text of the External ID source to match.
     :return: A list of archival object URIs, ordered by ID.
-    :raises ValueError: If source_prefix contains a LIKE wildcard.
     """
 
     mysql_client = connect(
@@ -114,6 +114,56 @@ def get_ao_uris_by_external_id_source_from_db(
     cursor.close()
     mysql_client.close()
     return ao_uris
+
+
+def get_ao_external_ids_by_source_from_db(
+    db_settings: dict, repo_id: int, source_prefix: str
+) -> list[dict]:
+    """Returns one row per External ID, on archival objects in a repository, whose
+    source starts with source_prefix, with enough archival object context for a
+    report. Obtained via a single database query, as a fast alternative to
+    fetching each archival object via the API.
+
+    Matching uses SQL LIKE, which is case-insensitive under MySQL's default
+    collations, so results may include sources that differ only in case. Callers
+    should re-check each row's source.
+    :param dict db_settings: A dict with DB connection details.
+    :param int repo_id: ASpace repository ID to search.
+    :param str source_prefix: Leading text of the External ID source to match.
+    :return: A list of dicts with keys ao_uri, ao_ref_id, ao_title, level,
+        resource_uri, source, removed_value; ordered by archival object ID.
+    """
+    mysql_client = connect(
+        host=db_settings.get("host"),
+        database=db_settings.get("database"),
+        user=db_settings.get("user"),
+        password=db_settings.get("password"),
+    )
+
+    query = """
+        select
+            concat('/repositories/', ao.repo_id, '/archival_objects/', ao.id) as ao_uri,
+            ao.ref_id as ao_ref_id,
+            coalesce(ao.title, ao.display_string) as ao_title,
+            ev.value as level,
+            concat('/repositories/', ao.repo_id, '/resources/', ao.root_record_id)
+                as resource_uri,
+            ei.source,
+            ei.external_id as removed_value
+        from external_id ei
+        inner join archival_object ao on ei.archival_object_id = ao.id
+        left join enumeration_value ev on ao.level_id = ev.id
+        where ao.repo_id = %s
+        and ei.source like %s
+        order by ao.id, ei.id
+    """
+    # Parameterized query requires tuple of values
+    cursor = mysql_client.cursor(DictCursor)
+    cursor.execute(query, (repo_id, f"{source_prefix}%"))
+    rows = list(cursor.fetchall())
+    cursor.close()
+    mysql_client.close()
+    return rows
 
 
 def get_ao_refs_for_top_container_from_db(
