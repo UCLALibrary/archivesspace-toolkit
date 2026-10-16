@@ -35,7 +35,6 @@ PROGRESS_INTERVAL = 1000
 
 @dataclass
 class AOResult:
-    """Outcome of processing one candidate archival object."""
 
     ao_uri: str
     changes: list[dict] = field(default_factory=list)
@@ -45,7 +44,6 @@ class AOResult:
 
 @dataclass
 class RunStats:
-    """Running totals, kept instead of every result so memory stays flat."""
 
     checked: int = 0
     with_AT_ids: int = 0
@@ -189,7 +187,9 @@ def _remove_AT_external_ids(record: dict) -> tuple[list[dict], int]:
 
     changes = update_external_ids(record, ids_to_add=[], sources_to_remove=at_sources)
 
-    resource_ref = (record.get("resource"), {}).get("ref")
+    # record.get("resource") should always exist,
+    # but use (record.get("resource") or {}) to avoid KeyError if it's missing.
+    resource_ref = (record.get("resource") or {}).get("ref")
     rows = [
         {
             "ao_uri": record.get("uri"),
