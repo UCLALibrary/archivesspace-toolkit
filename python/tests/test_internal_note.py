@@ -33,7 +33,6 @@ class TestBuildInternalNote(unittest.TestCase):
 
 
     def test_third_migration_replaces_oldest(self):
-        # The case from the ticket: two prior migrations, third run would exceed limit.
         existing = f"{NOTE_1}\n{NOTE_2}"
         self.assertGreater(len(f"{existing}\n{NOTE_3}"), 255)
         self.assertEqual(_build_internal_note(existing, NOTE_3), f"{NOTE_2}\n{NOTE_3}")
@@ -86,7 +85,7 @@ class TestAppendInternalNote(unittest.TestCase):
         self.assertEqual(tc["internal_note"], f"{NOTE_2}\n{NOTE_3}")
 
     def test_leaves_note_unchanged_when_it_cannot_fit(self):
-        original = "z" * 250
+        original = "foo" * 250
         tc = {"uri": "/tc/1", "internal_note": original}
         _append_internal_note(tc, self.TIMESTAMP)
         self.assertEqual(tc["internal_note"], original)
