@@ -35,6 +35,11 @@ VOLEQUIV_TO_CONTAINER_PROFILE = {
     "28.86": "/container_profiles/131",  # oversize flat box
 }
 
+
+# Lines starting with this prefix were written by previous migration runs and
+# may be dropped (oldest first) to make room for a new migration note.
+MIGRATION_NOTE_PREFIX = "Metadata updated"
+
 # CLI
 
 
@@ -195,26 +200,87 @@ def _apply_ils_ids(tc: dict, alma_item: dict, holdings_id: str) -> None:
     tc["ils_item_id"] = alma_item["pid"]
 
 
+def _build_internal_note(
+    existing: str, migration_note: str, max_length: int = 255
+) -> str | None:
+    """Return the internal note with migration_note appended on a new line,
+    keeping the result within max_length characters. Default is 255, since
+    ASpace stores top_container.internal_note as VARCHAR(255); longer values make
+    the whole update fail with a MySQL "Data too long" error.
+
+    If simply appending would exceed max_length, lines from previous migrations
+    (those starting with MIGRATION_NOTE_PREFIX) are removed oldest first, only
+    as many as needed. Other lines are never removed or altered.
+
+    :param str existing: Current internal note (may be empty).
+    :param str migration_note: New migration note to add.
+    :param int max_length: Maximum allowed length of the note, in characters.
+    :return: The new note, or None if it cannot fit even after removing all
+        previous migration lines (the caller should leave the note unchanged).
+    """
+    existing = existing.strip()
+    appended = f"{existing}\n{migration_note}" if existing else migration_note
+    if len(appended) <= max_length:
+        return appended
+
+    lines = existing.splitlines()
+    while True:
+        candidate = "\n".join(lines + [migration_note])
+        if len(candidate) <= max_length:
+            return candidate
+        oldest_migration_line = next(
+            (
+                i
+                for i, line in enumerate(lines)
+                if line.strip().startswith(MIGRATION_NOTE_PREFIX)
+            ),
+            None,
+        )
+        if oldest_migration_line is None:
+            return None
+        del lines[oldest_migration_line]
+
+
 def _append_internal_note(tc: dict, timestamp: str) -> None:
     """Append a migration note to the top container's internal_note field,
     after a newline if there is existing content.
+
+    If the result would exceed ASpace's length limit, notes from previous
+    migrations are replaced (see _build_internal_note). If it still would not
+    fit, the internal note is left unchanged and a warning is logged, so the
+    rest of the container's update can proceed.
 
     Mutates tc in place.
 
     :param dict tc: ASpace top container dict to update.
     :param str timestamp: ISO 8601 timestamp string for the migration note.
     """
-    logger.info(
-        f"Appending migration note to internal_note for top container {tc.get('uri')}"
-    )
+    uri = tc.get("uri")
     migration_note = (
-        f"Metadata updated in a scripted batch migration "
+        f"{MIGRATION_NOTE_PREFIX} in a scripted batch migration "
         f"from Alma item record on {timestamp}"
     )
-    existing = tc.get("internal_note", "").strip()
-    tc["internal_note"] = (
-        f"{existing}\n{migration_note}" if existing else migration_note
-    )
+    existing = (tc.get("internal_note") or "").strip()
+    new_note = _build_internal_note(existing, migration_note)
+
+    if new_note is None:
+        logger.warning(
+            f"Internal note for top container {uri} is too long to add a migration "
+            f"note (limit 255 characters) even after removing "
+            "previous migration notes; leaving internal_note unchanged"
+        )
+        return
+
+    if new_note == (f"{existing}\n{migration_note}" if existing else migration_note):
+        logger.info(
+            f"Appending migration note to internal_note for top container {uri}"
+        )
+    else:
+        logger.info(
+            f"Replacing previous migration note(s) in internal_note for top container "
+            f"{uri} to stay within 255 characters"
+        )
+    tc["internal_note"] = new_note
 
 
 def _apply_location(

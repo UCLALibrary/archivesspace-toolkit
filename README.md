@@ -257,7 +257,7 @@ For each matched Alma item / ASpace Top Container pair, the script updates:
 
 - ILS Holding ID and ILS Item ID, carried over from the Alma item record
 - Container Profile, derived from the VolEquiv value in Alma Internal Note 1
-- Internal Note, appended with a timestamped record of the migration
+- Internal Note, appended with a timestamped record of the migration. ArchivesSpace limits this field to 255 characters; if appending would exceed that, the oldest notes from previous migrations (lines starting with "Metadata updated") are removed as needed. Other content is never removed: if the note still wouldn't fit, the Internal Note is left unchanged and a warning is logged, and the container's other fields are still updated.
 - Location (SRLF items only), updated to the corresponding ASpace Location record based on the Alma location name
 
 Location updates are conditional: only items at specified SRLF locations (srar2/SLF-S PERF, srbi2/SLF-S BIOMEDSC, sryr2/SLF-S YRLSC, sryr7/SLF-S UAR) will have their ASpace location updated. All other metadata fields are updated unconditionally for every matched container.
