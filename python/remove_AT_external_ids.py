@@ -189,7 +189,7 @@ def _remove_AT_external_ids(record: dict) -> tuple[list[dict], int]:
 
     # record.get("resource") should always exist,
     # but use (record.get("resource") or {}) to avoid KeyError if it's missing.
-    resource_ref = (record.get("resource") or {}).get("ref")
+    resource_ref = record.get("resource", {}).get("ref")
     rows = [
         {
             "ao_uri": record.get("uri"),
@@ -567,6 +567,9 @@ def main() -> None:
 
     _print_summary(args.repo_id, stats, args.dry_run, args.use_db, args.print_output)
     if stats.interrupted:
+        # Shell convention: Ctrl-C sends SIGINT (signal 2). Bash returns exit code 128 + 2 = 130.
+        # Python follows this convention for uncaught KeyboardInterrupt exceptions.
+        # Use the same exit code (130) when the run is interrupted intentionally.
         sys.exit(130)
 
 
