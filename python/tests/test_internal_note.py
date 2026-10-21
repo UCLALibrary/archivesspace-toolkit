@@ -16,7 +16,8 @@ def _note(timestamp: str) -> str:
 
 NOTE_1 = _note("2026-08-01T10:00:00Z")
 NOTE_2 = _note("2026-09-01T10:00:00Z")
-NOTE_3 = _note("2026-10-20T09:14:03Z")
+TIMESTAMP = "2026-10-20T09:14:03Z"
+NOTE_3 = _note(TIMESTAMP)
 
 
 class TestBuildInternalNote(unittest.TestCase):
@@ -30,7 +31,6 @@ class TestBuildInternalNote(unittest.TestCase):
         self.assertEqual(
             _build_internal_note(existing, NOTE_2), f"{existing}\n{NOTE_2}"
         )
-
 
     def test_third_migration_replaces_oldest(self):
         existing = f"{NOTE_1}\n{NOTE_2}"
@@ -47,10 +47,15 @@ class TestBuildInternalNote(unittest.TestCase):
         existing = f"Staff note A\n{NOTE_1}\nStaff note B\n{NOTE_2}"
         result = _build_internal_note(existing, NOTE_3)
         self.assertEqual(result, f"Staff note A\nStaff note B\n{NOTE_2}\n{NOTE_3}")
-        self.assertLessEqual(len(result), 255)
+        # _build_internal_note can return None if the note cannot fit even after removing previous
+        # migration lines, but that should not happen here.
+        if result is not None:
+            self.assertLessEqual(len(result), 255)
+        else:
+            self.fail("_build_internal_note returned None unexpectedly")
 
     def test_returns_none_when_other_content_too_long(self):
-        existing = "foo" * 200
+        existing = "x" * 200
         self.assertIsNone(_build_internal_note(existing, NOTE_3))
 
     def test_result_never_exceeds_limit(self):
@@ -63,29 +68,31 @@ class TestBuildInternalNote(unittest.TestCase):
         ]:
             with self.subTest(existing=existing):
                 result = _build_internal_note(existing, NOTE_3)
-                self.assertIsNotNone(result)
-                self.assertLessEqual(len(result), 255)
-                self.assertTrue(result.endswith(NOTE_3))
+                # _build_internal_note can return None if the note cannot fit even after removing
+                # all previous migration lines, but that should not happen here.
+                if result is not None:
+                    self.assertLessEqual(len(result), 255)
+                    self.assertTrue(result.endswith(NOTE_3))
+                else:
+                    self.fail("_build_internal_note returned None unexpectedly")
 
 
 class TestAppendInternalNote(unittest.TestCase):
     """Tests for `_append_internal_note`, which mutates the top container dict."""
 
-    TIMESTAMP = "2026-10-20T09:14:03Z"
-
     def test_missing_or_null_note(self):
         for tc in [{"uri": "/tc/1"}, {"uri": "/tc/1", "internal_note": None}]:
             with self.subTest(tc=tc):
-                _append_internal_note(tc, self.TIMESTAMP)
+                _append_internal_note(tc, TIMESTAMP)
                 self.assertEqual(tc["internal_note"], NOTE_3)
 
     def test_replaces_old_notes_on_third_run(self):
         tc = {"uri": "/tc/1", "internal_note": f"{NOTE_1}\n{NOTE_2}"}
-        _append_internal_note(tc, self.TIMESTAMP)
+        _append_internal_note(tc, TIMESTAMP)
         self.assertEqual(tc["internal_note"], f"{NOTE_2}\n{NOTE_3}")
 
     def test_leaves_note_unchanged_when_it_cannot_fit(self):
         original = "foo" * 250
         tc = {"uri": "/tc/1", "internal_note": original}
-        _append_internal_note(tc, self.TIMESTAMP)
+        _append_internal_note(tc, TIMESTAMP)
         self.assertEqual(tc["internal_note"], original)

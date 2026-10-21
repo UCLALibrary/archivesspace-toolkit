@@ -229,16 +229,12 @@ def _build_internal_note(
         if len(candidate) <= max_length:
             return candidate
         oldest_migration_line = next(
-            (
-                i
-                for i, line in enumerate(lines)
-                if line.strip().startswith(MIGRATION_NOTE_PREFIX)
-            ),
+            (line for line in lines if line.strip().startswith(MIGRATION_NOTE_PREFIX)),
             None,
         )
         if oldest_migration_line is None:
             return None
-        del lines[oldest_migration_line]
+        lines.remove(oldest_migration_line)
 
 
 def _append_internal_note(tc: dict, timestamp: str) -> None:
