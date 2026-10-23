@@ -15,12 +15,12 @@ from migrate_alma_metadata_to_archivesspace import (
     get_run_timestamps,
     match_alma_items_to_containers,
 )
-from utils import configure_logging, load_config, write_to_cache
+from utils import load_config, start_run, write_json_output
 from utils.alma_utils import get_alma_items
 from utils.aspace_utils import get_aspace_containers, get_required_db_settings
 
 # Logger available globally within this module.
-# Configuration is done by configure_logging(), called in main().
+# Configuration is done by start_run(), called in main().
 logger = logging.get_logger(Path(__file__).stem)
 
 
@@ -73,10 +73,9 @@ def _get_args() -> argparse.Namespace:
 def main() -> None:
     """Add barcodes and migrate metadata from Alma to matched ASpace top containers."""
     logging_filename_base = Path(__file__).stem
-    print(f"Logging to {logging_filename_base}.log")
 
     args = _get_args()
-    configure_logging(log_filename_stem=logging_filename_base, dry_run=args.dry_run)
+    start_run(logging_filename_base, args.resource_id, args, args.dry_run)
 
     config = load_config(args.config_file)
     # Required (even without --use_db) to correctly identify false duplicates.
@@ -193,9 +192,10 @@ def main() -> None:
         print_unhandled_data(unhandled_data)
 
     if unhandled_data:
-        unhandled_filename = f"unhandled_{logging_filename_base}.json"
-        write_to_cache(unhandled_data, unhandled_filename, indent=2)
-        logger.info(f"Unhandled data written to {unhandled_filename}")
+        unhandled_path = write_json_output(
+            unhandled_data, f"unhandled_{logging_filename_base}.json", indent=2
+        )
+        logger.info(f"Unhandled data written to {unhandled_path}")
 
 
 if __name__ == "__main__":
