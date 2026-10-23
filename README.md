@@ -57,6 +57,25 @@ $ docker compose exec python bash
 $ docker compose exec python python
 ```
 
+### Log and output files
+
+Scripts write logs to `logs/` and other files to `output/`, relative to the directory they're run from. In the toolkit's containers, that's `/home/aspace/app`, so:
+- In the dev container, or via `docker compose exec`, the folders are `python/logs/` and `python/output/` in your copy of this repository, since `./python` is mounted at `/home/aspace/app`.
+- On the support server, via `run_aspace_script.sh`, the folders are `~/aspace-data/logs/` and `~/aspace-data/output/` (or under `$ASPACE_DATA_DIR`, if set). The wrapper script mounts these into the container. See [Running scripts on the support server](#running-scripts-on-the-support-server-ucla-only).
+
+The scripts which update ArchivesSpace data for a single collection (`add_alma_barcodes_to_archivesspace.py`, `cleanup_compound_indicators_aspace.py`, `merge_duplicate_containers_aspace.py`, `migrate_alma_barcodes_and_metadata_to_archivesspace.py`, and `migrate_alma_metadata_to_archivesspace.py`) name each run's log file and output folder after the script, the ArchivesSpace resource ID, and the time the run started:
+
+```
+logs/merge_duplicate_containers_aspace_resource_1415_20261023_093000.log
+output/merge_duplicate_containers_aspace_resource_1415_20261023_093000/
+```
+
+- The first line of the log records the command line and every parameter the script used, including defaults.
+- The output folder is only created if the run writes a file, so it won't exist for runs which only produce a log.
+- Cache files used by `--use_cache` (`alma_data_{holdings_id}.json`, `aspace_data_{resource_id}.json`) are kept in `output/cache/` instead, so later runs can reuse them.
+
+Other scripts write output files directly in `output/`.
+
 ## Running tests
 
 Several scripts have tests.  To run tests:
@@ -202,11 +221,11 @@ We have only barcoded a few collections so far, so the profiles may need to be a
 
 ### Evaluating the script output
 
-After running the script, you will see several output files:
-- `logs/add_alma_barcodes_to_archivesspace_{timestamp}.log`: The main log file.
-- `output/unhandled_add_alma_barcodes_to_archivesspace.json`: A JSON file containing Alma items that were not matched to ArchivesSpace top containers.
-- `output/aspace_data_{resource_id}.json`: A JSON file containing the ArchivesSpace top container data for the resource. This file is used as a data source for the script if the `--use_cache` flag is set.
-- `output/alma_data_{holdings_id}.json`: A JSON file containing the Alma item data for the collection. This file is used as a data source for the script if the `--use_cache` flag is set.
+After running the script, you will see several output files (see [Log and output files](#log-and-output-files)):
+- `logs/add_alma_barcodes_to_archivesspace_resource_{resource_id}_{timestamp}.log`: The main log file.
+- `output/add_alma_barcodes_to_archivesspace_resource_{resource_id}_{timestamp}/unhandled_add_alma_barcodes_to_archivesspace.json`: A JSON file containing Alma items that were not matched to ArchivesSpace top containers.
+- `output/cache/aspace_data_{resource_id}.json`: A JSON file containing the ArchivesSpace top container data for the resource. This file is used as a data source for the script if the `--use_cache` flag is set.
+- `output/cache/alma_data_{holdings_id}.json`: A JSON file containing the Alma item data for the collection. This file is used as a data source for the script if the `--use_cache` flag is set.
 
 The first two of these files are important for evaluating the script output. The log file ends with a summary statement describing the total number of Alma and ArchivesSpace records processed, the number of matches and non-matches, and the number of items with duplicate keys. If more than 80% of the items from each source are matched, the configuration profile is likely correct and the data is clean enough to run the script in the production environment.
 
@@ -243,7 +262,7 @@ The `add_alma_barcodes_to_archivesspace.py` script includes a utility which can 
 To "undo" barcodes recorded in a log file, use the following CLI flags as additional arguments for a typical command, as described above under *Example Usage*:
 
 1. `--undo_barcoding`: activates the utility
-2. `--use_log` {LOG_PATH}: provides the path to the relevant log file (e.g. `logs/add_alma_barcodes_to_archivesspace_{timestamp}.log`), which should include event messages in the format "Added barcode to top container {TOP_CONTAINER_REF}"
+2. `--use_log` {LOG_PATH}: provides the path to the relevant log file (e.g. `logs/add_alma_barcodes_to_archivesspace_resource_{resource_id}_{timestamp}.log`), which should include event messages in the format "Added barcode to top container {TOP_CONTAINER_REF}"
 
 Note that `--use_log` cannot be used without `--undo_barcoding`. However, if `--undo_barcoding` is used without `--use_log`, the utility will prompt twice for confirmation before deleting all barcodes related to the provided `resource_id`.
 
@@ -298,10 +317,10 @@ docker compose exec python python migrate_alma_metadata_to_archivesspace.py \
 This script uses the same matching profiles as the barcoding script. See [Configuration Profiles](#configuration-profiles) and [Determining the correct profile](#determining-the-correct-profile) above.
 
 ### Evaluating the script output
-After running the script, you will see the following output files:
+After running the script, you will see the following output files (see [Log and output files](#log-and-output-files)):
 
-- `logs/migrate_alma_metadata_to_archivesspace_{timestamp}.log`: The main log file, ending with a summary of totals, matches, and skipped items.
-- `output/unhandled_migrate_alma_metadata_to_archivesspace.json`: A JSON file containing any unmatched or duplicate items. Contains the same categories as the barcoding script's unhandled output, except `top_containers_with_barcode` (not applicable here).
+- `logs/migrate_alma_metadata_to_archivesspace_resource_{resource_id}_{timestamp}.log`: The main log file, ending with a summary of totals, matches, and skipped items.
+- `output/migrate_alma_metadata_to_archivesspace_resource_{resource_id}_{timestamp}/unhandled_migrate_alma_metadata_to_archivesspace.json`: A JSON file containing any unmatched or duplicate items. Contains the same categories as the barcoding script's unhandled output, except `top_containers_with_barcode` (not applicable here).
 
 The log summary also includes counts of containers skipped for location update (non-SRLF items) and container profile update (missing or unrecognized VolEquiv).
 
@@ -323,7 +342,7 @@ For each matched top container:
 - If it already has the same barcode as the Alma item, metadata is migrated.
 - If it already has a different barcode, it is skipped and listed under `tcs_with_barcode_mismatch` in the unhandled data file.
 
-Output is `logs/migrate_alma_barcodes_and_metadata_to_archivesspace_{timestamp}.log` and `output/unhandled_migrate_alma_barcodes_and_metadata_to_archivesspace.json`. Barcodes added by a live run can be removed with `add_alma_barcodes_to_archivesspace.py --undo_barcoding --use_log {LOG_PATH}`; this does not undo the metadata changes.
+Output is `logs/migrate_alma_barcodes_and_metadata_to_archivesspace_resource_{resource_id}_{timestamp}.log` and `unhandled_migrate_alma_barcodes_and_metadata_to_archivesspace.json`, in that run's output folder (see [Log and output files](#log-and-output-files)). Barcodes added by a live run can be removed with `add_alma_barcodes_to_archivesspace.py --undo_barcoding --use_log {LOG_PATH}`; this does not undo the metadata changes.
 
 # Finding duplicate indicators
  
@@ -492,7 +511,7 @@ Note two differences from running locally via the dev container:
 - Do not include `python` before the script name - the wrapper adds this automatically.
 - `--config_file` needs a `secrets/` prefix, since config files are mounted into a `secrets/` subdirectory rather than the working directory root.
 
-Log and output files (see [Evaluating the script output](#evaluating-the-script-output) above) appear in `~/aspace-data/logs/` and `~/aspace-data/output/` in real time as the script runs. Use `tail -f ~/aspace-data/logs/*.log` from a second terminal to monitor a run in progress.
+Log and output files (see [Evaluating the script output](#evaluating-the-script-output) above) appear in `~/aspace-data/logs/` and `~/aspace-data/output/` in real time as the script runs. Use `tail -f ~/aspace-data/logs/*.log` from a second terminal to monitor a run in progress. The script prints the names of its log file and output folder when it starts.
 
 ### Caveats
 

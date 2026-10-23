@@ -8,13 +8,18 @@ from asnake.client import ASnakeClient
 import asnake.logging as logging
 
 from config.base_match import match_containers
-from utils import configure_logging, load_config, read_from_cache, write_to_cache
+from utils import (
+    load_config,
+    read_from_cache,
+    start_run,
+    write_json_output,
+    write_to_cache,
+)
 from utils.alma_utils import get_alma_items_from_alma
 from utils.aspace_utils import get_container_refs_from_api, get_container_refs_from_db
 
-
 # Logger available globally within this module.
-# Configuration is done by configure_logging(), which is called by main().
+# Configuration is done by start_run(), which is called by main().
 # Made available globally so that tests can use the same logger with their own configuration.
 logger = logging.get_logger(Path(__file__).stem)
 
@@ -394,13 +399,13 @@ def _remove_barcodes_from_aspace(
 def main() -> None:
     """Add barcodes pulled from Alma records to matching records in ArchivesSpace."""
 
-    # For convenience while debugging, print log name without full container path.
     # Also used in names of some output files.
     logging_filename_base = Path(__file__).stem
-    print(f"Logging to {logging_filename_base}.log")
-    configure_logging(log_filename_stem=logging_filename_base)
 
     args: argparse.Namespace = _get_args()
+    # dry_run is deliberately not passed on: this script's logs are always JSON,
+    # which --undo_barcoding --use_log relies on when reading a log back in.
+    start_run(logging_filename_base, args.resource_id, args)
     config = load_config(args.config_file)
     alma_api_key = config["alma_config"]["alma_api_key"]
 
@@ -488,11 +493,12 @@ def main() -> None:
 
     # if there is any unhandled data, write it to a file
     if unhandled_data:
-        unhandled_data_filename = f"unhandled_{logging_filename_base}.json"
-        write_to_cache(unhandled_data, unhandled_data_filename, indent=2)
+        unhandled_data_path = write_json_output(
+            unhandled_data, f"unhandled_{logging_filename_base}.json", indent=2
+        )
         logger.info(
             f"Unhandled data (items and top containers remaining unmatched or with duplicate keys)"
-            f" written to {unhandled_data_filename}"
+            f" written to {unhandled_data_path}"
         )
 
 
