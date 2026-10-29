@@ -7,14 +7,14 @@ from collections import defaultdict
 from pathlib import Path
 from asnake.client import ASnakeClient
 
-from utils import configure_logging
+from utils import start_run
 from utils.aspace_utils import (
     get_ao_refs_for_top_container_from_db,
     get_container_refs_from_db,
 )
 
 # Logger available globally within this module.
-# Configuration is done by configure_logging(), which is called by main().
+# Configuration is done by start_run(), which is called by main().
 # Made available globally so that tests can use the same logger with their own configuration.
 logger = logging.get_logger(Path(__file__).stem)
 
@@ -464,8 +464,8 @@ def main() -> None:
         6. Remove archival object links to the original compound container.
         7. Delete the original compound container.
     """
-    configure_logging(Path(__file__).stem)
     args = _get_args()
+    start_run(script_name=Path(__file__).stem, args=args)
 
     aspace_client = ASnakeClient(config_file=args.config_file)
     db_config = aspace_client.config.get("database")

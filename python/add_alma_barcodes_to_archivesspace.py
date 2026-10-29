@@ -8,13 +8,17 @@ from asnake.client import ASnakeClient
 import asnake.logging as logging
 
 from config.base_match import match_containers
-from utils import configure_logging, load_config, read_from_cache, write_to_cache
+from utils import (
+    load_config,
+    read_from_cache,
+    start_run,
+    write_json_output,
+)
 from utils.alma_utils import get_alma_items_from_alma
 from utils.aspace_utils import get_container_refs_from_api, get_container_refs_from_db
 
-
 # Logger available globally within this module.
-# Configuration is done by configure_logging(), which is called by main().
+# Configuration is done by start_run(), which is called by main().
 # Made available globally so that tests can use the same logger with their own configuration.
 logger = logging.get_logger(Path(__file__).stem)
 
@@ -28,7 +32,7 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument("--bib_id", help="Alma bib MMS ID", required=True)
     parser.add_argument("--holdings_id", help="Alma holdings MMS ID", required=True)
     parser.add_argument(
-        "--resource_id", help="ArchivesSpace resource ID", required=True
+        "--resource_id", help="ArchivesSpace resource ID", type=int, required=True
     )
     parser.add_argument(
         "--repo_id",
@@ -123,7 +127,7 @@ def get_alma_items(
         alma_items = get_alma_items_from_alma(alma_client, bib_id, holdings_id)
         # Cache data in file for possible later use.
         logger.info(f"Caching Alma data in {alma_cache_file}")
-        write_to_cache(alma_items, alma_cache_file)
+        write_json_output(alma_items, alma_cache_file, write_cache=True)
     return alma_items
 
 
@@ -166,7 +170,7 @@ def get_aspace_containers(
 
         # Cache data in file for possible later use.
         logger.info(f"Caching ASpace data in {aspace_cache_file}")
-        write_to_cache(containers, aspace_cache_file)
+        write_json_output(containers, aspace_cache_file, write_cache=True)
 
     return containers
 
@@ -394,13 +398,13 @@ def _remove_barcodes_from_aspace(
 def main() -> None:
     """Add barcodes pulled from Alma records to matching records in ArchivesSpace."""
 
-    # For convenience while debugging, print log name without full container path.
-    # Also used in names of some output files.
-    logging_filename_base = Path(__file__).stem
-    print(f"Logging to {logging_filename_base}.log")
-    configure_logging(log_filename_stem=logging_filename_base)
+    # Used in the names of the log, the output folder, and some output files.
+    script_name = Path(__file__).stem
 
     args: argparse.Namespace = _get_args()
+    # This script's logs are always JSON, even for dry runs,
+    # since --undo_barcoding --use_log relies on that when reading a log back in.
+    start_run(script_name=script_name, args=args, override_log_format=False)
     config = load_config(args.config_file)
     alma_api_key = config["alma_config"]["alma_api_key"]
 
@@ -488,11 +492,12 @@ def main() -> None:
 
     # if there is any unhandled data, write it to a file
     if unhandled_data:
-        unhandled_data_filename = f"unhandled_{logging_filename_base}.json"
-        write_to_cache(unhandled_data, unhandled_data_filename, indent=2)
+        unhandled_data_path = write_json_output(
+            unhandled_data, f"unhandled_{script_name}.json", indent=2
+        )
         logger.info(
             f"Unhandled data (items and top containers remaining unmatched or with duplicate keys)"
-            f" written to {unhandled_data_filename}"
+            f" written to {unhandled_data_path}"
         )
 
 

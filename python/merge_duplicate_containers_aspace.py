@@ -6,7 +6,7 @@ from asnake.jsonmodel import JM
 from collections import defaultdict
 from pathlib import Path
 
-from utils import configure_logging, load_config
+from utils import load_config, start_run
 from utils.aspace_utils import (
     find_false_duplicates,
     get_container_refs_from_db,
@@ -15,7 +15,7 @@ from utils.aspace_utils import (
 )
 
 # Logger available globally within this module.
-# Configuration is done by configure_logging(), which is called by main().
+# Configuration is done by start_run(), which is called by main().
 # Made available globally so that tests can use the same logger with their own configuration.
 logger = logging.get_logger(Path(__file__).stem)
 
@@ -408,10 +408,7 @@ def _process_duplicates_in_collection(
 def main() -> None:
     """Entry-point for this program."""
     args = _get_args()
-
-    log_filename_stem = Path(__file__).stem
-    log_filename = configure_logging(log_filename_stem, args.dry_run)
-    print(f"Logging to {log_filename}...")
+    start_run(script_name=Path(__file__).stem, args=args)
 
     config = load_config(args.config_file)
     db_config = get_required_db_settings(config)

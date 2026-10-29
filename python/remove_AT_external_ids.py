@@ -522,7 +522,7 @@ def main() -> None:
     """Remove Archivists' Toolkit External IDs from a repository's archival objects."""
     args = _get_args()
     log_name = configure_logging(
-        log_filename_stem=Path(__file__).stem, dry_run=args.dry_run
+        log_filename_stem=Path(__file__).stem, override_log_format=args.dry_run
     )
     print(f"Logging to {log_name}")
     # Name the CSVs after the timestamped log file, so each run (e.g. a resumed
