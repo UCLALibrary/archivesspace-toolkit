@@ -9,7 +9,6 @@ import yaml
 from asnake import logging
 from datetime import datetime
 from pathlib import Path
-from typing import NamedTuple
 
 # Shared output directories, relative to the current working directory
 # (the script's launch directory — WORKDIR inside the toolkit's containers).
@@ -26,13 +25,6 @@ CACHE_DIR = OUTPUT_DIR / "cache"
 # Scripts that don't call start_run() leave this as None,
 # and their output goes directly in OUTPUT_DIR, as before.
 _run_output_dir: Path | None = None
-
-
-class RunPaths(NamedTuple):
-    """Where a run started by start_run() writes its log and output files."""
-
-    log_file: Path
-    output_dir: Path
 
 
 def resolve_output_path(filename: str | Path) -> Path:
@@ -73,34 +65,38 @@ def _resolve_cache_path(filename: str | Path) -> Path:
 
 def start_run(
     script_name: str,
-    resource_id: str | int,
     args: argparse.Namespace,
-    dry_run: bool = False,
-) -> RunPaths:
+    override_log_format: bool | None = None,
+) -> None:
     """Set up logging and output locations for one run of a script
     against a single ArchivesSpace resource (i.e. collection),
     and log the run's parameters.
 
     Both the log file and the run's output folder are named
-    <script_name>_resource_<resource_id>_<timestamp>, e.g.:
+    <script_name>_resource_<args.resource_id>_<timestamp>, e.g.:
         logs/merge_duplicate_containers_aspace_resource_1234_20261023_093000.log
         output/merge_duplicate_containers_aspace_resource_1234_20261023_093000/
+    The output folder is only created if the run writes a file to it.
 
     Like configure_logging(), this must be called before ASnakeClient is
     instantiated, so that ASnake does not fall back to its default log location.
 
     :param str script_name: Name of the script, usually Path(__file__).stem.
-    :param str | int resource_id: The ASpace resource ID the script is run against.
     :param argparse.Namespace args: The script's parsed command-line arguments,
-        all of which are logged.
-    :param bool dry_run: Passed on to configure_logging(). Defaults to False.
-    :return RunPaths: The paths of the log file and the run's output folder.
-        The output folder is only created if the run writes a file to it.
+        all of which are logged. Must include `resource_id` (an int).
+    :param bool | None override_log_format: Passed on to configure_logging().
+        If None (the default), use the value of `args.dry_run`,
+        so that dry runs write human-readable logs.
     """
     global _run_output_dir
 
-    run_name_stem = f"{script_name}_resource_{resource_id}"
-    log_filename = configure_logging(log_filename_stem=run_name_stem, dry_run=dry_run)
+    if override_log_format is None:
+        override_log_format = args.dry_run
+
+    run_name_stem = f"{script_name}_resource_{args.resource_id}"
+    log_filename = configure_logging(
+        log_filename_stem=run_name_stem, override_log_format=bool(override_log_format)
+    )
     # Use the log file's name (which includes its timestamp) for the output folder,
     # so each run's log and output folder are guaranteed to match.
     _run_output_dir = OUTPUT_DIR / Path(log_filename).stem
@@ -111,22 +107,21 @@ def start_run(
         "Run parameters", command_line=sys.argv, parameters=vars(args)
     )
 
-    run_paths = RunPaths(log_file=LOGS_DIR / log_filename, output_dir=_run_output_dir)
-    print(f"Logging to {run_paths.log_file}")
-    print(f"Output files, if any, will be written to {run_paths.output_dir}/")
-    return run_paths
+    print(f"Logging to {LOGS_DIR / log_filename}")
+    print(f"Output files, if any, will be written to {_run_output_dir}/")
 
 
 def configure_logging(
     log_filename_stem: str = "log",
-    dry_run: bool = False,
+    override_log_format: bool = False,
 ) -> str:
     """Configure ASnake logging using the provided log filename stem.
 
     :param str log_filename_stem: The filename stem to use for the configured log file.
         Defaults to "log".
-    :param bool dry_run: If True, write human-readable lines for review.
-        If False, use ASnake's default JSON line format. Defaults to False.
+    :param bool override_log_format: If True, write human-readable lines for review
+        (typically for dry runs). If False, use ASnake's default JSON line format.
+        Defaults to False.
     :return str: The name of the log file.
     """
     LOGS_DIR.mkdir(parents=True, exist_ok=True)  # create dir if it doesn't exist
@@ -148,11 +143,11 @@ def configure_logging(
         )
         for processor in processors
     ]
-    # For more human-readable output in dry run mode,
+    # For more human-readable output (e.g. in dry run mode),
     # replace the `JSONRenderer` with a `ConsoleRenderer`
     # in structlog's processor list.
     # See docs @https://www.structlog.org/en/stable/console-output.html
-    if dry_run:
+    if override_log_format:
         processors[-1] = logging.structlog.dev.ConsoleRenderer(colors=False)
     logging.structlog.configure(processors=processors)
 
@@ -210,47 +205,31 @@ def read_from_cache(filename: str) -> list[dict] | None:
     return data
 
 
-def write_to_cache(
-    data: dict | list[dict],
-    filename: str,
-    indent: int | None = None,
-) -> Path:
-    """Stores data in the given file (under the shared CACHE_DIR) for possible later use.
-    Data is expected to be a dict or list of dicts,
-    but this method does not enforce that.
-
-    For JSON reports that belong with a single run's output,
-    use write_json_output() instead.
-
-    :param dict | list[dict] data: Data to write to the cache file.
-    :param str filename: Filename for cache file. Only the filename component
-        is used — the file is always written under CACHE_DIR.
-    :param int indent: Number of spaces to indent the JSON data.
-        Defaults to None, which means no indentation.
-    :return Path: The resolved path the cache file was written to.
-    """
-    resolved_path = _resolve_cache_path(filename)
-    with open(resolved_path, "w") as f:
-        json.dump(data, f, indent=indent)
-    return resolved_path
-
-
 def write_json_output(
     data: dict | list[dict],
     filename: str,
     indent: int | None = None,
+    write_cache: bool = False,
 ) -> Path:
-    """Writes data as JSON to the given file in the current output folder
-    (see resolve_output_path()).
+    """Writes data as JSON to the given file, either in the current output folder
+    (see resolve_output_path()) or in the shared CACHE_DIR.
+    Data is expected to be a dict or list of dicts,
+    but this method does not enforce that.
 
     :param dict | list[dict] data: Data to write.
     :param str filename: Filename for the JSON file. Only the filename component
-        is used — the file is always written in the output folder.
+        is used — the file is always written in the output folder or CACHE_DIR.
     :param int indent: Number of spaces to indent the JSON data.
         Defaults to None, which means no indentation.
+    :param bool write_cache: If True, write to CACHE_DIR, for possible reuse
+        by later runs via read_from_cache(). If False, write to the current
+        output folder. Defaults to False.
     :return Path: The resolved path the file was written to.
     """
-    resolved_path = resolve_output_path(filename)
+    if write_cache:
+        resolved_path = _resolve_cache_path(filename)
+    else:
+        resolved_path = resolve_output_path(filename)
     with open(resolved_path, "w") as f:
         json.dump(data, f, indent=indent)
     return resolved_path

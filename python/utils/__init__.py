@@ -10,7 +10,6 @@ from .generic_utils import (
     start_run,
     write_dicts_to_csv,
     read_from_cache,
-    write_to_cache,
     write_json_output,
 )
 
@@ -20,6 +19,5 @@ __all__ = [
     "start_run",
     "write_dicts_to_csv",
     "read_from_cache",
-    "write_to_cache",
     "write_json_output",
 ]

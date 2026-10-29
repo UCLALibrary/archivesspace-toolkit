@@ -325,7 +325,9 @@ def main() -> None:
     print(f"Logging to {logging_filename_base}.log")
 
     args = _get_args()
-    configure_logging(log_filename_stem=logging_filename_base, dry_run=args.dry_run)
+    configure_logging(
+        log_filename_stem=logging_filename_base, override_log_format=args.dry_run
+    )
 
     config = load_config(args.config_file)
     aspace_client = ASnakeClient(**config)

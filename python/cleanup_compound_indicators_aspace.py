@@ -465,7 +465,7 @@ def main() -> None:
         7. Delete the original compound container.
     """
     args = _get_args()
-    start_run(Path(__file__).stem, args.resource_id, args)
+    start_run(script_name=Path(__file__).stem, args=args)
 
     aspace_client = ASnakeClient(config_file=args.config_file)
     db_config = aspace_client.config.get("database")

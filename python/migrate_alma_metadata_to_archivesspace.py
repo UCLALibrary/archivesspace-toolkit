@@ -50,7 +50,7 @@ def _get_args() -> argparse.Namespace:
     parser.add_argument("--bib_id", required=True, help="Alma bib MMS ID")
     parser.add_argument("--holdings_id", required=True, help="Alma holdings MMS ID")
     parser.add_argument(
-        "--resource_id", required=True, help="ArchivesSpace resource ID"
+        "--resource_id", type=int, required=True, help="ArchivesSpace resource ID"
     )
     parser.add_argument(
         "--repo_id",
@@ -503,10 +503,11 @@ def get_run_timestamps() -> tuple[str, str]:
 
 def main() -> None:
     """Migrate Alma metadata fields to matched ArchivesSpace top containers."""
-    logging_filename_base = Path(__file__).stem
+    # Used in the names of the log, the output folder, and some output files.
+    script_name = Path(__file__).stem
 
     args = _get_args()
-    start_run(logging_filename_base, args.resource_id, args, args.dry_run)
+    start_run(script_name=script_name, args=args)
 
     config = load_config(args.config_file)
     # Required (even without --use_db) to correctly identify false duplicates.
@@ -608,7 +609,7 @@ def main() -> None:
 
     if unhandled_data:
         unhandled_path = write_json_output(
-            unhandled_data, f"unhandled_{logging_filename_base}.json", indent=2
+            unhandled_data, f"unhandled_{script_name}.json", indent=2
         )
         logger.info(f"Unhandled data written to {unhandled_path}")
 

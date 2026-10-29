@@ -6,7 +6,7 @@ that can be reused across multiple scripts in the toolkit.
 """
 
 from alma_api_client import AlmaAPIClient
-from utils.generic_utils import read_from_cache, write_to_cache
+from utils.generic_utils import read_from_cache, write_json_output
 
 
 def get_alma_items_from_alma(
@@ -64,5 +64,5 @@ def get_alma_items(
         alma_items = read_from_cache(alma_cache_file)
     if not alma_items:
         alma_items = get_alma_items_from_alma(alma_client, bib_id, holdings_id)
-        write_to_cache(alma_items, alma_cache_file)
+        write_json_output(alma_items, alma_cache_file, write_cache=True)
     return alma_items

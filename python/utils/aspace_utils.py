@@ -10,7 +10,7 @@ import re
 from asnake.client import ASnakeClient
 from MySQLdb import connect
 from MySQLdb.cursors import DictCursor
-from utils.generic_utils import read_from_cache, write_to_cache
+from utils.generic_utils import read_from_cache, write_json_output
 
 
 def get_container_refs_from_api(
@@ -396,7 +396,7 @@ def get_aspace_containers(
                 aspace_client, repo_id, resource_id
             )
         containers = _get_containers_from_container_refs(aspace_client, container_refs)
-        write_to_cache(containers, aspace_cache_file)
+        write_json_output(containers, aspace_cache_file, write_cache=True)
     return containers
 
 

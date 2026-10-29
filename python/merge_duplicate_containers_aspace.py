@@ -408,7 +408,7 @@ def _process_duplicates_in_collection(
 def main() -> None:
     """Entry-point for this program."""
     args = _get_args()
-    start_run(Path(__file__).stem, args.resource_id, args, args.dry_run)
+    start_run(script_name=Path(__file__).stem, args=args)
 
     config = load_config(args.config_file)
     db_config = get_required_db_settings(config)
