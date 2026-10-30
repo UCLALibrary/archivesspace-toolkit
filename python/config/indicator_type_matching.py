@@ -1,6 +1,11 @@
 from typing import Any, Optional
 
-from config.base_match import build_match_data, normalize_alma_indicator
+from config.base_match import (
+    UnparseableAlmaKey,
+    build_match_data,
+    normalize_alma_indicator,
+    skip_unparseable_alma_item,
+)
 
 
 def _get_aspace_key(tc: dict, logger: Optional[Any] = None) -> tuple:
@@ -8,12 +13,21 @@ def _get_aspace_key(tc: dict, logger: Optional[Any] = None) -> tuple:
     return (tc.get("indicator"), tc.get("type"))
 
 
-def _get_alma_key(item: dict, logger: Optional[Any] = None) -> tuple:
+def _get_alma_key(
+    item: dict, logger: Optional[Any] = None
+) -> tuple | UnparseableAlmaKey:
     """Returns the (indicator, container type) matching key for an Alma item,
-    parsed from its description, e.g. "box.1"."""
-    description = item.get("description", "")
-    alma_container_type = description.split(".")[0]
-    alma_indicator = normalize_alma_indicator(description.split(".")[1])
+    parsed from its description, e.g. "box.1".
+
+    If the description isn't in that format (no ".", or an empty type or
+    indicator, e.g. "sx142967-sx143045"), logs an error and returns a key that
+    won't match anything, so the item is reported as unmatched.
+    """
+    parts = item.get("description", "").split(".")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        return skip_unparseable_alma_item(item, "box.0023", logger)
+    alma_container_type = parts[0]
+    alma_indicator = normalize_alma_indicator(parts[1])
     return (alma_indicator, alma_container_type)
 
 
