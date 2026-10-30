@@ -1,4 +1,43 @@
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
+
+
+@dataclass(frozen=True, eq=False)
+class UnparseableAlmaKey:
+    """Matching key for an Alma item whose description isn't in the format the
+    matching profile expects.
+
+    `eq=False` gives identity-based equality and hashing, so every instance is
+    unique: it never equals an ASpace key (so the item is never matched) or
+    another unparseable item's key (so it is never reported as a duplicate).
+    The item therefore always ends up in `unmatched_alma_items`, which every
+    script reports.
+    """
+
+    pid: Optional[str]
+    description: Optional[str]
+
+
+def skip_unparseable_alma_item(
+    item: dict, expected_format: str, logger: Optional[Any] = None
+) -> UnparseableAlmaKey:
+    """Logs that an Alma item's description can't be parsed, and returns a key
+    that excludes the item from matching (see UnparseableAlmaKey).
+
+    :param dict item: The Alma item.
+    :param str expected_format: Example of the description format the profile
+        expects, for the log message, e.g. "box.0023".
+    :param logger: Optional logger.
+    :return: A key that won't match any ASpace top container.
+    """
+    description = item.get("description")
+    if logger:
+        logger.error(
+            f"Alma item {item.get('pid')} (barcode {item.get('barcode')}) has a"
+            f" nonstandard description: {description!r} (expected a format like"
+            f" {expected_format!r}). Skipping; it will be reported as unmatched."
+        )
+    return UnparseableAlmaKey(pid=item.get("pid"), description=description)
 
 
 def match_containers(

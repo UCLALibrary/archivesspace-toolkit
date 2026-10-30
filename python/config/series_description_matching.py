@@ -1,7 +1,12 @@
 from typing import Any, Optional
 import re
 
-from config.base_match import build_match_data, normalize_alma_indicator
+from config.base_match import (
+    UnparseableAlmaKey,
+    build_match_data,
+    normalize_alma_indicator,
+    skip_unparseable_alma_item,
+)
 
 
 def parse_aspace_indicator(tc_indicator_with_series: str) -> tuple[str, str]:
@@ -51,14 +56,29 @@ def _get_aspace_key(tc: dict, logger: Optional[Any] = None):
     return (tc_indicator, tc_type, tc_series)
 
 
-def _get_alma_key(item: dict, logger: Optional[Any] = None) -> tuple:
+def _get_alma_key(
+    item: dict, logger: Optional[Any] = None
+) -> tuple | UnparseableAlmaKey:
     """Returns the (indicator, type, series) matching key for an Alma item, parsed
     from its space- and period-delimited description,
-    e.g. "ser.P box.0011" -> ("11", "box", "P")."""
-    description = item.get("description", "")
-    alma_series = description.split(" ")[0].split(".")[1]
-    alma_type = description.split(" ")[1].split(".")[0]
-    alma_indicator = description.split(" ")[1].split(".")[1]
+    e.g. "ser.P box.0011" -> ("11", "box", "P").
+
+    If the description isn't in that format (missing the space or either ".",
+    or an empty series, type or indicator), logs an error and returns a key that
+    won't match anything, so the item is reported as unmatched.
+    """
+    tokens = item.get("description", "").split(" ")
+    series_parts = tokens[0].split(".")
+    box_parts = tokens[1].split(".") if len(tokens) > 1 else []
+    if (
+        len(series_parts) < 2
+        or len(box_parts) < 2
+        or not all((series_parts[1], box_parts[0], box_parts[1]))
+    ):
+        return skip_unparseable_alma_item(item, "ser.P box.0011", logger)
+    alma_series = series_parts[1]
+    alma_type = box_parts[0]
+    alma_indicator = box_parts[1]
 
     # normalize capitalization of series - all uppercase
     alma_series = alma_series.upper()
