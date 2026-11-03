@@ -16,6 +16,11 @@ def _item(pid: str, description) -> dict:
     return {"pid": pid, "barcode": f"BC{pid}", "description": description}
 
 
+# The shared tests live in a base class that inherits from TestCase (so editors and
+# type checkers know about self.assert*, etc.), nested inside a plain container
+# class. unittest only collects TestCase subclasses at module level, so the base
+# class itself is never run; only the per-profile subclasses below are. The name
+# "Common" is arbitrary.
 # Thanks to https://adamj.eu/tech/2025/05/30/python-unittest-common-tests/
 class Common:
     class NonstandardDescriptionTests(unittest.TestCase):
@@ -88,24 +93,43 @@ class Common:
 
 class TestIndicatorOnly(Common.NonstandardDescriptionTests):
     profile = indicator_only_matching
-    good_description = "box.0023"
-    good_tc = {"uri": "/repositories/2/top_containers/1", "indicator": "23"}
-    bad_descriptions = ["sx142967-sx143045", "box.", ""]
+    # Only the indicator is compared: "folder.0023" -> "23". The container type is
+    # ignored, so the top container may have a different type (here, "folder" vs "box").
+    good_description = "folder.0023"
+    good_tc = {
+        "uri": "/repositories/2/top_containers/1",
+        "indicator": "23",
+        "type": "box",
+    }
+    bad_descriptions = [
+        "sx142967-sx143045",  # no "."
+        "box.",  # empty indicator
+        "",
+    ]
 
 
 class TestIndicatorType(Common.NonstandardDescriptionTests):
     profile = indicator_type_matching
+    # Indicator and type are both compared: "box.0023" -> ("23", "box"),
+    # so the top container needs a matching "type".
     good_description = "box.0023"
     good_tc = {
         "uri": "/repositories/2/top_containers/1",
         "indicator": "23",
         "type": "box",
     }
-    bad_descriptions = ["sx142967-sx143045", "box.", ".0023", ""]
+    bad_descriptions = [
+        "sx142967-sx143045",  # no "."
+        "box.",  # empty indicator
+        ".0023",  # empty type
+        "",
+    ]
 
 
 class TestSeriesDescription(Common.NonstandardDescriptionTests):
     profile = series_description_matching
+    # Indicator, type, and series are compared:
+    # "ser.P box.0011" -> ("11", "box", "P"), matching ASpace indicator "11P".
     good_description = "ser.P box.0011"
     good_tc = {
         "uri": "/repositories/2/top_containers/1",

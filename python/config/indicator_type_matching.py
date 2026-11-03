@@ -14,16 +14,24 @@ def _get_aspace_key(tc: dict, logger: Optional[Any] = None) -> tuple:
 
 
 def _get_alma_key(
-    item: dict, logger: Optional[Any] = None
+    item: dict[str, Any], logger: Optional[Any] = None
 ) -> tuple | UnparseableAlmaKey:
-    """Returns the (indicator, container type) matching key for an Alma item,
-    parsed from its description, e.g. "box.1".
+    """Returns the matching key for an Alma item: an (indicator, container type)
+    tuple parsed from its description, to match an ASpace top container's
+    `indicator` and `type`.
 
-    If the description isn't in that format (no ".", or an empty type or
-    indicator, e.g. "sx142967-sx143045"), logs an error and returns a key that
-    won't match anything, so the item is reported as unmatched.
+    Descriptions look like "<container type>.<indicator>". Both parts are used,
+    and the indicator (box number) is normalized. For example:
+        "box.23"            -> ("23", "box")
+        "box.0024 RESTRICTED" -> ("24", "box")
+        "folder.0025"         -> ("25", "folder")
+
+    If there is no ".", or either part is empty (e.g. "sx142967-sx143045",
+    "box.", or ".0023"), logs an error and returns a key that won't match
+    anything, so the item is reported as unmatched.
     """
-    parts = item.get("description", "").split(".")
+    description: str = item.get("description", "")
+    parts = description.split(".")
     if len(parts) < 2 or not parts[0] or not parts[1]:
         return skip_unparseable_alma_item(item, "box.0023", logger)
     alma_container_type = parts[0]

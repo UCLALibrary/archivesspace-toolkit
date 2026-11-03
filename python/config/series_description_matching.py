@@ -57,7 +57,7 @@ def _get_aspace_key(tc: dict, logger: Optional[Any] = None):
 
 
 def _get_alma_key(
-    item: dict, logger: Optional[Any] = None
+    item: dict[str, Any], logger: Optional[Any] = None
 ) -> tuple | UnparseableAlmaKey:
     """Returns the (indicator, type, series) matching key for an Alma item, parsed
     from its space- and period-delimited description,
@@ -67,7 +67,8 @@ def _get_alma_key(
     or an empty series, type or indicator), logs an error and returns a key that
     won't match anything, so the item is reported as unmatched.
     """
-    tokens = item.get("description", "").split(" ")
+    description: str = item.get("description", "")
+    tokens = description.split(" ")
     series_parts = tokens[0].split(".")
     box_parts = tokens[1].split(".") if len(tokens) > 1 else []
     if (
@@ -76,9 +77,9 @@ def _get_alma_key(
         or not all((series_parts[1], box_parts[0], box_parts[1]))
     ):
         return skip_unparseable_alma_item(item, "ser.P box.0011", logger)
-    alma_series = series_parts[1]
-    alma_type = box_parts[0]
-    alma_indicator = box_parts[1]
+    alma_series: str = series_parts[1]
+    alma_type: str = box_parts[0]
+    alma_indicator: str = box_parts[1]
 
     # normalize capitalization of series - all uppercase
     alma_series = alma_series.upper()

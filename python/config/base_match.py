@@ -14,12 +14,12 @@ class UnparseableAlmaKey:
     script reports.
     """
 
-    pid: Optional[str]
-    description: Optional[str]
+    pid: str
+    description: str
 
 
 def skip_unparseable_alma_item(
-    item: dict, expected_format: str, logger: Optional[Any] = None
+    item: dict[str, Any], expected_format: str, logger: Any | None = None
 ) -> UnparseableAlmaKey:
     """Logs that an Alma item's description can't be parsed, and returns a key
     that excludes the item from matching (see UnparseableAlmaKey).
@@ -30,14 +30,15 @@ def skip_unparseable_alma_item(
     :param logger: Optional logger.
     :return: A key that won't match any ASpace top container.
     """
-    description = item.get("description")
+    pid: str = item.get("pid", "")
+    description: str = item.get("description", "")
     if logger:
         logger.error(
-            f"Alma item {item.get('pid')} (barcode {item.get('barcode')}) has a"
+            f"Alma item {pid} (barcode {item.get('barcode')}) has a"
             f" nonstandard description: {description!r} (expected a format like"
             f" {expected_format!r}). Skipping; it will be reported as unmatched."
         )
-    return UnparseableAlmaKey(pid=item.get("pid"), description=description)
+    return UnparseableAlmaKey(pid=pid, description=description)
 
 
 def match_containers(
