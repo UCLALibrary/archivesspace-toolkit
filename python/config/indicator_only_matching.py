@@ -1,6 +1,11 @@
 from typing import Any, Optional
 
-from config.base_match import build_match_data, normalize_alma_indicator
+from config.base_match import (
+    UnparseableAlmaKey,
+    build_match_data,
+    normalize_alma_indicator,
+    skip_unparseable_alma_item,
+)
 
 
 def _get_aspace_key(tc: dict, logger: Optional[Any] = None) -> str:
@@ -8,11 +13,28 @@ def _get_aspace_key(tc: dict, logger: Optional[Any] = None) -> str:
     return tc.get("indicator", "")
 
 
-def _get_alma_key(item: dict, logger: Optional[Any] = None) -> str:
-    """Returns the indicator matching key for an Alma item, parsed from its
-    description, e.g. "box.1"."""
-    description = item.get("description", "")
-    return normalize_alma_indicator(description.split(".")[1])
+def _get_alma_key(
+    item: dict[str, Any], logger: Optional[Any] = None
+) -> str | UnparseableAlmaKey:
+    """Returns the matching key for an Alma item: the indicator (box number)
+    parsed from its description, normalized to match an ASpace top container's
+    `indicator`.
+
+    Descriptions look like "<container type>.<indicator>". Only the part after
+    the "." is used; the container type is ignored by this profile. For example:
+        "box.23"            -> "23"
+        "box.0024 RESTRICTED" -> "24"
+        "folder.0025"         -> "25"
+
+    If there is no "." or nothing after it (e.g. "sx142967-sx143045" or "box."),
+    logs an error and returns a key that won't match anything, so the item is
+    reported as unmatched.
+    """
+    description: str = item.get("description", "")
+    parts = description.split(".")
+    if len(parts) < 2 or not parts[1]:
+        return skip_unparseable_alma_item(item, "box.0023", logger)
+    return normalize_alma_indicator(parts[1])
 
 
 def _format_duplicate_tc(tc: dict, key: str) -> tuple:
