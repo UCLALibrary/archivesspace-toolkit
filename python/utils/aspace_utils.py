@@ -5,7 +5,10 @@ This module provides utilities for interacting with ArchivesSpace
 that can be reused across multiple scripts in the toolkit.
 """
 
+import csv
 import re
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 
 from asnake.client import ASnakeClient
 from MySQLdb import connect
@@ -612,3 +615,236 @@ def exclude_false_duplicates(
         else:
             kept.append(tc)
     return kept, excluded
+
+
+# MARCXML export and OCLC External IDs for resources
+
+
+# External ID source for OCLC numbers on ASpace resources. This must match
+# OCLC_SOURCE in update_aspace_external_ids.py, which writes these values.
+OCLC_SOURCE = "OCLC"
+
+# Namespace of the MARCXML produced by ASpace's MARC 21 exporter.
+MARCXML_NAMESPACE = "http://www.loc.gov/MARC21/slim"
+
+# Default name of the CSV column holding resource IDs, for
+# read_resource_ids_from_csv().
+RESOURCE_ID_CSV_COLUMN = "resource_id"
+
+
+@dataclass
+class ResourceMarcxml:
+    """MARCXML export and identifiers for one ASpace resource.
+
+    Exactly one of marcxml and error is set. identifier, title and oclc_ids are filled in whenever
+    the resource record itself could be fetched, even if its MARCXML export then failed.
+    """
+
+    resource_id: int
+    uri: str
+    identifier: str | None = None
+    title: str | None = None
+    oclc_ids: list[str] = field(default_factory=list)
+    marcxml: str | None = None
+    error: str | None = None
+
+
+def read_resource_ids_from_csv(
+    csv_path: str, column: str = RESOURCE_ID_CSV_COLUMN
+) -> list[int]:
+    """Read ASpace resource IDs from one column of a CSV file.
+
+    Values must be integer resource IDs (e.g. "1234"), not URIs. Leading and trailing whitespace
+    is ignored. Duplicate IDs are returned as-is, in file order.
+
+    :param str csv_path: Path to the CSV file.
+    :param str column: Name of the column holding resource IDs.
+    :return: List of resource IDs.
+    :raises ValueError: If the column is missing, or any value in it is blank
+        or not an integer. The message lists every bad row, so they can all
+        be fixed at once.
+    """
+    with open(csv_path, "r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        if column not in (reader.fieldnames or []):
+            raise ValueError(
+                f"Input CSV has no '{column}' column. "
+                f"Found columns: {reader.fieldnames}"
+            )
+
+        resource_ids = []
+        bad_rows = []
+        for row in reader:
+            value = (row.get(column) or "").strip()
+            # isascii() also rules out non-ASCII digits, which int() accepts.
+            if value.isascii() and value.isdigit():
+                resource_ids.append(int(value))
+            else:
+                # line_num is the file line just read, so it stays accurate
+                # when the reader skips blank lines.
+                bad_rows.append(f"line {reader.line_num}: {value!r}")
+
+    if bad_rows:
+        raise ValueError(
+            f"Input CSV has blank or non-integer values in '{column}': "
+            + "; ".join(bad_rows)
+        )
+    return resource_ids
+
+
+def get_resource_identifier(resource: dict) -> str | None:
+    """Return a resource's collection identifier as a single string.
+
+    ASpace stores the identifier in up to four parts (id_0 to id_3).
+    Parts that are present are joined with "-".
+
+    :param dict resource: ASpace resource dict.
+    :return: The identifier, or None if the resource has no identifier parts.
+    """
+    parts = [resource.get(f"id_{i}") for i in range(4)]
+    return "-".join(part for part in parts if part) or None
+
+
+def get_resource_external_ids_by_source(resource: dict, source: str) -> list[str]:
+    """Return all of a resource's External ID values with the given source.
+
+    A resource can have more than one External ID with the same source,
+    so this returns all of them, in record order. Entries with no value are skipped.
+
+    :param dict resource: ASpace resource dict.
+    :param str source: External ID source to match exactly, e.g. OCLC_SOURCE.
+    :return: List of External ID values.
+    """
+    return [
+        eid["external_id"]
+        for eid in resource.get("external_ids", [])
+        if eid.get("source") == source and eid.get("external_id")
+    ]
+
+
+def get_resource_marcxml(
+    aspace_client: ASnakeClient,
+    repo_id: int,
+    resource_id: int,
+    include_unpublished: bool = False,
+) -> tuple[str | None, str | None]:
+    """Export a resource as MARCXML and check that the result is well-formed.
+
+    Calls ASpace's MARC 21 export endpoint,
+    GET /repositories/:repo_id/resources/marc21/:id.xml.
+    include_unpublished is passed as the endpoint's include_unpublished_marc
+    parameter, whose ASpace default is false. In the public ASpace 4.2.1
+    source, this controls whether unpublished content (e.g. notes) is
+    included in the export; it does not stop an unpublished resource from
+    being exported.
+
+    Network errors (e.g. a dropped connection) are not caught here, since
+    they would affect every resource, not just this one.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int repo_id: The ArchivesSpace repository ID.
+    :param int resource_id: The ID of the resource to export.
+    :param bool include_unpublished: Whether to include unpublished content.
+    :return: (marcxml, None) on success, or (None, error message) if the
+        export request fails or its response is not well-formed MARCXML.
+    """
+    response = aspace_client.get(
+        f"/repositories/{repo_id}/resources/marc21/{resource_id}.xml",
+        params={"include_unpublished_marc": str(include_unpublished).lower()},
+    )
+    if response.status_code != 200:
+        # ASnake's own logging shows only the status, not the response body,
+        # so include the body (truncated) in the error message.
+        return None, (
+            f"MARCXML export failed with HTTP {response.status_code}: "
+            f"{response.text[:500]}"
+        )
+
+    # Check the raw bytes rather than response.text: ASpace's Content-Type
+    # header has no charset, so requests would have to guess the encoding.
+    # ElementTree uses the XML declaration's encoding (UTF-8 from ASpace's
+    # exporter), and _get_marcxml_problem() confirms the bytes are UTF-8.
+    problem = _get_marcxml_problem(response.content)
+    if problem:
+        return None, f"MARCXML export is malformed: {problem}"
+    return response.content.decode("utf-8"), None
+
+
+def _get_marcxml_problem(content: bytes) -> str | None:
+    """Check that content is well-formed MARCXML for a single record.
+
+    The check is structural only: the content must parse as XML, its root
+    must be a MARCXML <collection> or <record>, and it must contain exactly
+    one <record>, since ASpace exports one MARC record per resource.
+    Field contents are not checked.
+
+    :param bytes content: Raw response body.
+    :return: None if the content passes, or a description of the problem.
+    """
+    try:
+        root = ET.fromstring(content)
+        # Also confirm the bytes decode as UTF-8.
+        content.decode("utf-8")
+    except ET.ParseError as e:
+        return f"not well-formed XML ({e})"
+    except UnicodeDecodeError as e:
+        return f"not valid UTF-8 ({e})"
+
+    record_tag = f"{{{MARCXML_NAMESPACE}}}record"
+    collection_tag = f"{{{MARCXML_NAMESPACE}}}collection"
+    if root.tag == record_tag:
+        record_count = 1
+    elif root.tag == collection_tag:
+        record_count = len(root.findall(record_tag))
+    else:
+        return f"root element is {root.tag}, not a MARCXML collection or record"
+
+    if record_count != 1:
+        return f"expected 1 MARC record, found {record_count}"
+    return None
+
+
+def get_marcxml_for_resources(
+    aspace_client: ASnakeClient,
+    resource_ids: list[int],
+    repo_id: int = 2,
+    include_unpublished: bool = False,
+) -> list[ResourceMarcxml]:
+    """Get MARCXML, plus the identifiers the OCLC scripts need, for a list
+    of ASpace resources.
+
+    For each resource, fetches the resource record (for its URI, collection
+    identifier, title and OCLC External IDs) and its MARCXML export. A
+    resource whose record can't be fetched, or whose export fails or is
+    malformed, gets an error in its result; the rest of the list is still
+    processed. Nothing is logged here, so calling scripts should log or
+    report errors from the results.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param list[int] resource_ids: IDs of the resources to export.
+    :param int repo_id: The ArchivesSpace repository ID. Defaults to 2.
+    :param bool include_unpublished: Passed to get_resource_marcxml().
+    :return: One ResourceMarcxml per resource ID, in input order.
+    """
+    results = []
+    for resource_id in resource_ids:
+        result = ResourceMarcxml(
+            resource_id=resource_id,
+            uri=f"/repositories/{repo_id}/resources/{resource_id}",
+        )
+        results.append(result)
+
+        resource = get_resource_by_uri(aspace_client, result.uri)
+        if resource is None:
+            result.error = (
+                "Could not fetch resource record (not found, or request failed)"
+            )
+            continue
+
+        result.identifier = get_resource_identifier(resource)
+        result.title = resource.get("title")
+        result.oclc_ids = get_resource_external_ids_by_source(resource, OCLC_SOURCE)
+        result.marcxml, result.error = get_resource_marcxml(
+            aspace_client, repo_id, resource_id, include_unpublished
+        )
+    return results
