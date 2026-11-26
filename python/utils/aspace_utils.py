@@ -5,11 +5,14 @@ This module provides utilities for interacting with ArchivesSpace
 that can be reused across multiple scripts in the toolkit.
 """
 
+import csv
 import re
 
 from asnake.client import ASnakeClient
 from MySQLdb import connect
 from MySQLdb.cursors import DictCursor
+from requests import Response
+from utils.aspace_models import Resource
 from utils.generic_utils import read_from_cache, write_json_output
 
 
@@ -612,3 +615,144 @@ def exclude_false_duplicates(
         else:
             kept.append(tc)
     return kept, excluded
+
+
+# Resources and their MARCXML exports
+
+
+# Default name of the CSV column holding resource IDs, for
+# read_resource_ids_from_csv().
+RESOURCE_ID_CSV_COLUMN = "resource_id"
+
+
+def read_resource_ids_from_csv(
+    csv_path: str, column: str = RESOURCE_ID_CSV_COLUMN
+) -> list[int]:
+    """Read ASpace resource IDs from one column of a CSV file.
+
+    Values must be integer resource IDs (e.g. "1234"), not URIs. Leading and trailing whitespace
+    is ignored. Duplicate IDs are returned as-is, in file order.
+
+    :param str csv_path: Path to the CSV file.
+    :param str column: Name of the column holding resource IDs.
+    :return: List of resource IDs.
+    :raises ValueError: If the column is missing, or any value in it is blank or not an integer.
+        The message lists every bad row, so they can all be fixed at once.
+    """
+    with open(csv_path, "r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        if column not in (reader.fieldnames or []):
+            raise ValueError(
+                f"Input CSV has no '{column}' column. "
+                f"Found columns: {reader.fieldnames}"
+            )
+
+        resource_ids = []
+        bad_rows = []
+        for row in reader:
+            value = row.get(column, "").strip()
+            # isascii() also rules out non-ASCII digits, which int() accepts.
+            if value.isascii() and value.isdigit():
+                resource_ids.append(int(value))
+            else:
+                # line_num is the file line just read, so it stays accurate
+                # when the reader skips blank lines.
+                bad_rows.append(f"line {reader.line_num}: {value!r}")
+
+    if bad_rows:
+        raise ValueError(
+            f"Input CSV has blank or non-integer values in '{column}': "
+            + "; ".join(bad_rows)
+        )
+    return resource_ids
+
+
+def get_resource_marcxml_response(
+    aspace_client: ASnakeClient,
+    resource_id: int,
+    repo_id: int = 2,
+    include_unpublished: bool = False,
+) -> Response:
+    """Request a resource's MARCXML export from ASpace, and return the raw response.
+
+    Calls ASpace's MARC 21 export endpoint,
+    GET /repositories/:repo_id/resources/marc21/:id.xml. Store the response on a
+    Resource as marcxml_response; Resource.marcxml and Resource.marcxml_error then
+    interpret it.
+
+    include_unpublished is passed as the endpoint's include_unpublished_marc parameter,
+    whose ASpace default is false.
+
+    Network errors (e.g. a dropped connection) are not caught here, since they would
+    affect every resource, not just this one.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int resource_id: The ID of the resource to export.
+    :param int repo_id: The ArchivesSpace repository ID. Defaults to 2.
+    :param bool include_unpublished: Whether to include unpublished content.
+    :return: The export endpoint's response, whatever its status.
+    """
+    return aspace_client.get(
+        f"/repositories/{repo_id}/resources/marc21/{resource_id}.xml",
+        params={"include_unpublished_marc": str(include_unpublished).lower()},
+    )
+
+
+def get_resource(
+    aspace_client: ASnakeClient,
+    resource_id: int,
+    repo_id: int = 2,
+    include_marcxml: bool = False,
+    include_unpublished: bool = False,
+) -> Resource:
+    """Fetch a resource record, and optionally its MARCXML export, as a Resource.
+
+    If the record can't be fetched, the Resource has no data (its found property is
+    False) and its MARCXML export isn't requested. Problems are reported through the
+    Resource's error property rather than raised, so a batch can carry on; nothing is
+    logged here.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param int resource_id: The ID of the resource to fetch.
+    :param int repo_id: The ArchivesSpace repository ID. Defaults to 2.
+    :param bool include_marcxml: Whether to also fetch the MARCXML export.
+    :param bool include_unpublished: Passed to get_resource_marcxml_response().
+    :return: A Resource for the given ID.
+    """
+    resource = Resource(resource_id=resource_id, repo_id=repo_id)
+    data = get_resource_by_uri(aspace_client, resource.uri)
+    if data is not None:
+        resource.data = data
+    if include_marcxml and resource.found:
+        resource.marcxml_response = get_resource_marcxml_response(
+            aspace_client, resource_id, repo_id, include_unpublished
+        )
+    return resource
+
+
+def get_resources(
+    aspace_client: ASnakeClient,
+    resource_ids: list[int],
+    repo_id: int = 2,
+    include_marcxml: bool = False,
+    include_unpublished: bool = False,
+) -> list[Resource]:
+    """Fetch several resources with get_resource().
+
+    A resource that can't be fetched, or whose export fails or is malformed, gets an
+    error in its Resource; the rest of the list is still processed. Calling scripts
+    should log or report errors from the results.
+
+    :param ASnakeClient aspace_client: ASnakeClient instance.
+    :param list[int] resource_ids: IDs of the resources to fetch.
+    :param int repo_id: The ArchivesSpace repository ID. Defaults to 2.
+    :param bool include_marcxml: Whether to also fetch each MARCXML export.
+    :param bool include_unpublished: Passed to get_resource_marcxml_response().
+    :return: One Resource per resource ID, in input order.
+    """
+    return [
+        get_resource(
+            aspace_client, resource_id, repo_id, include_marcxml, include_unpublished
+        )
+        for resource_id in resource_ids
+    ]
